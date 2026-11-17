@@ -1,0 +1,35 @@
+{
+  "name": "@velnorix/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./env": "./src/env.ts",
+    "./errors": "./src/errors.ts",
+    "./hosts": "./src/hosts.ts",
+    "./ids": "./src/ids.ts",
+    "./logger": "./src/logger.ts",
+    "./money": "./src/money.ts",
+    "./pagination": "./src/pagination.ts",
+    "./result": "./src/result.ts",
+    "./slug": "./src/slug.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "pino": "^9.6.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@velnorix/config": "workspace:*",
+    "pino-pretty": "^13.0.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
+  }
+}

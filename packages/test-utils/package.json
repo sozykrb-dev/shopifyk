@@ -1,0 +1,25 @@
+{
+  "name": "@velnorix/test-utils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres.ts",
+    "./factories": "./src/factories.ts",
+    "./vitest-setup": "./src/vitest-setup.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "embedded-postgres": "18.6.0-beta.19",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@velnorix/config": "workspace:*",
+    "typescript": "^5.7.3"
+  }
+}

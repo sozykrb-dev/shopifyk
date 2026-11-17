@@ -1,0 +1,43 @@
+{
+  "name": "@velnorix/admin",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port ${PORT:-3000}",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0 --port ${PORT:-3000}",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@sentry/nextjs": "^9.0.0",
+    "@velnorix/auth": "workspace:*",
+    "@velnorix/core": "workspace:*",
+    "@velnorix/db": "workspace:*",
+    "@velnorix/ui": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "lucide-react": "^0.474.0",
+    "next": "15.5.29",
+    "qrcode": "^1.5.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.10.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@velnorix/config": "workspace:*",
+    "autoprefixer": "^10.4.20",
+    "dotenv": "^16.6.1",
+    "eslint": "^9.18.0",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  }
+}

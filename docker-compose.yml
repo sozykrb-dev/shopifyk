@@ -1,0 +1,67 @@
+# Development infrastructure.
+#
+# The application itself is NOT containerised here (you run it with `pnpm dev`
+# so hot reload works). Production images are built separately; this file is the
+# shortest path to a real PostgreSQL and Redis on any machine with Docker.
+#
+# Without Docker, `pnpm db:start` runs an embedded PostgreSQL instead.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: velnorix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: velnorix
+      # UTF8 is required: product titles and addresses are Arabic.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5432:5432'
+    volumes:
+      - velnorix-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d velnorix']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: velnorix-redis
+    restart: unless-stopped
+    # Cache and job queues (Phase 1+). maxmemory-policy is explicit so an
+    # eviction never silently drops a rate-limit bucket we depend on.
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--maxmemory',
+        '256mb',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
+    ports:
+      - '6379:6379'
+    volumes:
+      - velnorix-redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: velnorix-mailpit
+    restart: unless-stopped
+    # Catches every outbound email (verification, password reset) in dev.
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+
+volumes:
+  velnorix-postgres:
+  velnorix-redis:

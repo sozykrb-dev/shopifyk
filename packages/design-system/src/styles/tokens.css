@@ -1,0 +1,134 @@
+/**
+ * Velnorix design tokens.
+ *
+ * Every colour is an HSL triplet in a CSS variable so that:
+ *  - light/dark mode is a class swap, not a duplicated component tree;
+ *  - a store theme can override `--primary` per tenant (Phase 3) without
+ *    rebuilding anything.
+ *
+ * Spacing, radii and typography are declared once here and consumed through the
+ * Tailwind preset, so an admin table and a storefront button cannot drift apart.
+ */
+
+:root {
+  --font-sans:
+    'Cairo', 'IBM Plex Sans Arabic', 'Noto Sans Arabic', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', monospace;
+
+  --radius: 0.5rem;
+
+  /* Neutral surface ramp */
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+
+  /* Teal: the platform's primary action colour */
+  --primary: 174 72% 26%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+
+  --destructive: 0 72% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 60% 30%;
+  --success-foreground: 0 0% 100%;
+  --warning: 35 92% 42%;
+  --warning-foreground: 26 83% 10%;
+
+  --border: 214 20% 88%;
+  --input: 214 20% 88%;
+  --ring: 174 72% 26%;
+
+  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.12);
+}
+
+.dark {
+  --background: 222 47% 8%;
+  --foreground: 210 40% 96%;
+  --card: 222 44% 11%;
+  --card-foreground: 210 40% 96%;
+  --popover: 222 44% 11%;
+  --popover-foreground: 210 40% 96%;
+  --muted: 217 33% 17%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 217 33% 17%;
+  --accent-foreground: 210 40% 96%;
+
+  --primary: 174 70% 40%;
+  --primary-foreground: 222 47% 8%;
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 40% 96%;
+
+  --destructive: 0 63% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 52% 42%;
+  --warning: 35 92% 55%;
+  --warning-foreground: 26 83% 10%;
+
+  --border: 217 33% 20%;
+  --input: 217 33% 22%;
+  --ring: 174 70% 45%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/**
+ * RTL is a first-class citizen: components only use logical properties
+ * (`ps-*`, `pe-*`, `ms-*`, `me-*`, `text-start`, `text-end`), so flipping the
+ * direction attribute flips the whole interface. Arabic also needs a little
+ * more line height than Latin to stay readable.
+ */
+[dir='rtl'] {
+  --font-sans:
+    'Cairo', 'IBM Plex Sans Arabic', 'Noto Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+[dir='rtl'] body,
+[dir='rtl'] p,
+[dir='rtl'] li,
+[dir='rtl'] td {
+  line-height: 1.9;
+}
+
+/* Numbers stay in the Latin alphabet even in Arabic UI: prices, SKUs, dates. */
+[dir='rtl'] .numeric {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+}
+
+/* Visible focus for keyboard users on every interactive element. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

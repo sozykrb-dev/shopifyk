@@ -1,0 +1,12 @@
+{
+  "extends": "@velnorix/config/tsconfig/next.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "jsx": "preserve"
+  },
+  "include": ["src", "tests", "*.ts", "*.mjs", "next-env.d.ts", ".next/types/**/*.ts"]
+}

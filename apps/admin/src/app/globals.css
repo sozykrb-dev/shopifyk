@@ -1,0 +1,46 @@
+@import '@velnorix/ui/styles.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Arabic numerals are harder to scan in dense admin tables, so numbers are
+     rendered with Latin digits through the `.numeric` helper. */
+  table .numeric,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Skeleton shimmer used while server components stream. */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgb(0 0 0 / 0) 0%,
+      rgb(255 255 255 / 0.25) 50%,
+      rgb(0 0 0 / 0) 100%
+    );
+    animation: shimmer 1.6s infinite;
+  }
+
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}

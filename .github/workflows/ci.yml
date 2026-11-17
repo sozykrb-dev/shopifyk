@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  # The app role is created by migration 0001 and its password is synced from
+  # DATABASE_URL by `pnpm db:migrate`, so CI exercises the exact same roles and
+  # RLS policies as production.
+  DATABASE_URL: postgres://velnorix:velnorix@127.0.0.1:5432/velnorix_test
+  DATABASE_MIGRATION_URL: postgres://postgres:postgres@127.0.0.1:5432/velnorix_test
+  APP_BASE_DOMAIN: velnorix.test
+  ADMIN_BASE_DOMAIN: admin.velnorix.test
+  TOTP_ENCRYPTION_KEY: dmVsbm9yaXgtY2ktdG90cC1rZXktMzItYnl0ZXMhIQ==
+  ALLOW_DEV_TENANT_OVERRIDE: 'true'
+
+jobs:
+  quality:
+    name: Lint, typecheck, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: velnorix_test
+          POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: quality
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: velnorix_test
+          POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations and seed
+        run: |
+          pnpm db:migrate
+          pnpm db:seed
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build apps
+        run: pnpm build
+
+      - name: Run end-to-end tests
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/admin/playwright-report
+          retention-days: 7

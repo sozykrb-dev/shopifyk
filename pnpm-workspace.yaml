@@ -1,0 +1,12 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Packages allowed to run install scripts (pnpm >= 11 setting).
+# Everything else -- notably playwright and sentry-cli -- must not download anything at install time.
+allowBuilds:
+  esbuild: true
+  '@embedded-postgres/linux-x64': true
+  # sentry-cli only uploads source maps during a release build; it is denied on
+  # purpose so a fresh clone never downloads a native binary at install time.
+  '@sentry/cli': false

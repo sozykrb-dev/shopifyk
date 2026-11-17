@@ -1,0 +1,12 @@
+@import '@velnorix/ui/styles.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* Per-store theming: the store settings override --primary at render time. */
+  }
+}

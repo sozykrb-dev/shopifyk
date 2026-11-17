@@ -1,0 +1,57 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "globalEnv": [
+    "ADMIN_BASE_DOMAIN",
+    "ALLOW_DEV_TENANT_OVERRIDE",
+    "APP_BASE_DOMAIN",
+    "CI",
+    "DATABASE_MIGRATIONS_DIR",
+    "DATABASE_URL",
+    "GATEWAY_SECRET_ENCRYPTION_KEY",
+    "LOG_LEVEL",
+    "MAIL_FROM",
+    "MAIL_TRANSPORT",
+    "NODE_ENV",
+    "PGDATA_DIR",
+    "PGPORT",
+    "PLAYWRIGHT_BASE_URL",
+    "SENTRY_DSN",
+    "SESSION_SECRET",
+    "STOREFRONT_PORT",
+    "TOTP_ENCRYPTION_KEY"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "lint:fix": {
+      "cache": false
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false
+    }
+  }
+}

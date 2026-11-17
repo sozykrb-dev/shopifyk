@@ -1,0 +1,32 @@
+{
+  "name": "@velnorix/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./tenant": "./src/tenant-context.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@velnorix/core": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "postgres": "^3.4.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@velnorix/config": "workspace:*",
+    "@velnorix/test-utils": "workspace:*",
+    "drizzle-kit": "^0.31.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
+  }
+}
