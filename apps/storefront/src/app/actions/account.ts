@@ -4,14 +4,24 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import {
+  assertStrongPassword,
   authenticate,
+  createPasswordResetToken,
+  consumePasswordResetToken,
   endSession,
+  hashPassword,
   registerCustomer,
   resolveSession,
   sessionAllowedOnHost,
   verifyCustomerEmail,
 } from '@velnorix/auth';
-import { claimGuestCart, withPlatform, withTenant } from '@velnorix/db';
+import {
+  claimGuestCart,
+  findUserByEmail,
+  updateUserPassword,
+  withPlatform,
+  withTenant,
+} from '@velnorix/db';
 import { CART_COOKIE } from '@/lib/session.js';
 import { requireStorefront } from '@/lib/store-context.js';
 
@@ -104,6 +114,75 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
   }
 
   redirect('/account');
+}
+
+/**
+ * Step one: ask for a reset.
+ *
+ * The response is **identical whether or not the address exists**. Telling the
+ * customer "no such account" turns this form into a free membership oracle for
+ * anyone who knows a few email addresses, and that is not a trade worth making
+ * for a slightly friendlier message.
+ *
+ * A reset request also burns every outstanding token for that user, so a link
+ * stolen from an old email cannot be used later.
+ */
+export async function requestPasswordResetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const email = String(formData.get('email') ?? '').trim();
+  const { store } = await requireStorefront();
+
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { error: 'يرجى إدخال بريد إلكتروني صحيح.' };
+  }
+
+  const token = await withPlatform(async (db) => {
+    const user = await findUserByEmail(db, email, 'customer', store.id);
+    // No account, or an account that never verified its email: same answer.
+    if (!user || user.status !== 'active') return null;
+    return createPasswordResetToken(db, user.id);
+  });
+
+  return {
+    ok: true,
+    ...(devMailEnabled() && token ? { devToken: token } : {}),
+  };
+}
+
+/**
+ * Step two: choose a new password.
+ *
+ * The token is consumed by the same statement that reads it, so the link works
+ * exactly once — replaying it after a successful reset does nothing, and
+ * replaying it while a reset is in flight cannot produce two winners.
+ */
+export async function resetPasswordAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const token = String(formData.get('token') ?? '').trim();
+  const password = String(formData.get('password') ?? '');
+  const confirm = String(formData.get('passwordConfirm') ?? '');
+
+  if (!token) return { error: 'رابط الإعادة غير صالح أو منتهي الصلاحية.' };
+  if (password !== confirm) return { error: 'كلمتا المرور غير متطابقتين.' };
+
+  try {
+    assertStrongPassword(password);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'كلمة المرور ضعيفة.' };
+  }
+
+  const userId = await withPlatform((db) => consumePasswordResetToken(db, token));
+  if (!userId) return { error: 'رابط الإعادة غير صالح أو منتهي الصلاحية.' };
+
+  const passwordHash = await hashPassword(password);
+  await withPlatform((db) => updateUserPassword(db, userId, passwordHash));
+
+  revalidatePath('/account/login');
+  redirect('/account/login?reset=1');
 }
 
 export async function logoutAction(): Promise<void> {

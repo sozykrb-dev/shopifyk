@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Package,
   Receipt,
+  Users,
   Settings,
   Tags,
   ScrollText,
@@ -43,6 +44,7 @@ const STORE_NAV: readonly NavItem[] = [
   { href: '/orders', label: 'الطلبات', icon: ShoppingBag },
   { href: '/products', label: 'المنتجات', icon: Package },
   { href: '/pricing', label: 'التسعير', icon: Tags },
+  { href: '/staff', label: 'فريق العمل', icon: Users },
   { href: '/settings', label: 'الإعدادات', icon: Settings },
 ];
 

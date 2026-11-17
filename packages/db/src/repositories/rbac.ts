@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Database } from '../client.js';
 import {
   permissions,
@@ -6,6 +6,7 @@ import {
   roles,
   storeMemberships,
   userPlatformRoles,
+  users,
   type Permission,
   type Role,
 } from '../schema.js';
@@ -173,6 +174,99 @@ export async function listMembershipsForUser(
     .from(storeMemberships)
     .innerJoin(roles, eq(roles.id, storeMemberships.roleId))
     .where(eq(storeMemberships.userId, userId));
+}
+
+export type StoreMember = {
+  membershipId: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  roleKey: string;
+  roleNameAr: string;
+  status: string;
+  createdAt: Date;
+};
+
+/**
+ * Everyone with a role in one store.
+ *
+ * Deliberately tenant-scoped by argument rather than by RLS: this is the list
+ * an admin console renders, and it must never leak a member of another store.
+ */
+export async function listStoreMembers(db: Database, storeId: string): Promise<StoreMember[]> {
+  return db
+    .select({
+      membershipId: storeMemberships.id,
+      userId: users.id,
+      email: users.email,
+      fullName: users.fullName,
+      roleKey: roles.key,
+      roleNameAr: roles.nameAr,
+      status: storeMemberships.status,
+      createdAt: storeMemberships.createdAt,
+    })
+    .from(storeMemberships)
+    .innerJoin(roles, eq(roles.id, storeMemberships.roleId))
+    .innerJoin(users, eq(users.id, storeMemberships.userId))
+    .where(eq(storeMemberships.storeId, storeId))
+    .orderBy(asc(users.fullName));
+}
+
+/**
+ * Applies a different role to an existing member (upserting if they are new).
+ */
+export async function setStoreMemberRole(
+  db: Database,
+  input: { storeId: string; userId: string; roleId: string; invitedByUserId?: string | null },
+): Promise<MembershipWithRole> {
+  return assignStoreMembership(db, input);
+}
+
+/**
+ * Suspends a member without deleting the row.
+ *
+ * A revoked staff account keeps its history. Deleting the membership instead
+ * would leave orders and audit entries pointing at a user who appears never to
+ * have worked here, which is worse than a disabled account.
+ */
+export async function setStoreMemberStatus(
+  db: Database,
+  input: { storeId: string; userId: string; status: 'active' | 'disabled' },
+): Promise<boolean> {
+  const updated = await db
+    .update(storeMemberships)
+    .set({ status: input.status, updatedAt: new Date() })
+    .where(
+      and(eq(storeMemberships.storeId, input.storeId), eq(storeMemberships.userId, input.userId)),
+    )
+    .returning({ id: storeMemberships.id });
+  return updated.length > 0;
+}
+
+/**
+ * Counts how many active members hold a given role.
+ *
+ * Used to stop a store from removing the last owner. A store with no owner has
+ * nobody who can add one back, and the only remedy is a platform operator with
+ * SQL access -- which is not a remedy, it is an incident.
+ */
+export async function countActiveMembersWithRole(
+  db: Database,
+  storeId: string,
+  roleKey: string,
+): Promise<number> {
+  const rows = await db
+    .select({ id: storeMemberships.id })
+    .from(storeMemberships)
+    .innerJoin(roles, eq(roles.id, storeMemberships.roleId))
+    .where(
+      and(
+        eq(storeMemberships.storeId, storeId),
+        eq(storeMemberships.status, 'active'),
+        eq(roles.key, roleKey),
+      ),
+    );
+  return rows.length;
 }
 
 export async function findMembership(

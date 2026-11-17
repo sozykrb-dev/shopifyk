@@ -22,6 +22,26 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/**
+ * Replaces a user's password hash.
+ *
+ * Called after a reset token has been consumed, and deliberately dumb: it does
+ * not check the old password, because by this point possession of a
+ * single-use token is the proof. Everywhere else, changing a password must ask
+ * for the current one.
+ *
+ * Any session that should die when the password changes is the caller's
+ * business -- a reset must invalidate sessions, and that belongs with the
+ * session code, not buried here.
+ */
+export async function updateUserPassword(
+  db: Database,
+  userId: string,
+  passwordHash: string,
+): Promise<void> {
+  await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
 export async function findUserByEmail(
   db: Database,
   email: string,

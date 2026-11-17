@@ -153,6 +153,50 @@ The colour is validated as a six-digit hex, and the logo as an `https://` or
 root-relative URL. Neither is cosmetic — both are injected into the rendered
 page, so an unvalidated value is stored XSS dressed up as branding.
 
+### Customer accounts
+
+Registration, email verification, login, and — new — a password reset loop
+that closes cleanly.
+
+`/account/forgot` asks for an email and answers with the _same_ sentence
+whether or not the address exists. Telling a customer "no such account" turns
+the form into a free membership oracle for anyone holding a list of email
+addresses, and that is not a trade worth making for a friendlier message.
+
+`/account/reset` takes the emailed token and sets a new password. The token is
+read and consumed by a single `UPDATE … WHERE consumed_at IS NULL RETURNING`,
+so the link works exactly once: replaying it cannot produce a second winner,
+and a token stolen from an old email stops working the moment a new one is
+requested. In development the token is shown on screen, because there is no
+mail server to deliver it.
+
+### Staff and roles
+
+Roles and their permissions were defined in migration `0002` and have been
+enforced by the RBAC engine since Phase 1 — what was missing was any way for a
+merchant to _use_ them. `/staff` in the store console is that missing half.
+
+Without it, a store owner's only option is to share their own password. That is
+how most small stores actually work, and it is why an audit trail is useless at
+most of them.
+
+Three rules are enforced in the action, not the page, because the page is only
+a suggestion:
+
+- **Nobody edits their own membership.** Otherwise a staff member who holds
+  `store:staff.write` promotes themselves to owner, and the audit log records a
+  decision nobody made.
+- **The last owner cannot be demoted or disabled.** A store with no owner has
+  nobody who can add one back; the recovery is a platform operator with SQL
+  access, which is an incident rather than a workflow.
+- **Only store-scoped roles are assignable.** Granting `platform_owner` from a
+  merchant console is how a merchant becomes an administrator of everyone
+  else's shop.
+
+A revoked account is disabled, never deleted. Deleting the membership would
+leave orders and audit entries pointing at someone who appears never to have
+worked there, which is worse than a locked door.
+
 ### Catalogue
 
 `/products` is the store's catalogue: server-rendered, with search and
