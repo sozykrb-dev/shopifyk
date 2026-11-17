@@ -165,6 +165,14 @@ export function StaffList({
             return (
               <div
                 key={member.userId}
+                /*
+                 * `data-self` marks the row the signed-in user cannot edit.
+                 * Asserting "their own controls are disabled" from a test needs
+                 * a hook that survives a class rename -- a selector built on
+                 * `rounded-lg` would match the surrounding Card first.
+                 */
+                data-testid="staff-row"
+                data-self={isSelf ? 'true' : 'false'}
                 className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-end sm:justify-between"
               >
                 <div className="min-w-0 space-y-1">
