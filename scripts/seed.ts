@@ -11,6 +11,8 @@ import {
   findStoreBySlug,
   findUserByEmail,
   markEmailVerified,
+  orderItems,
+  orders,
   plans,
   products,
   recordAudit,
@@ -257,7 +259,188 @@ async function seedStore(definition: SeedStore, planId: string): Promise<Store> 
     }
   });
 
+  const catalogue = await withTenant(store.id, (db) =>
+    db
+      .select({
+        titleAr: products.titleAr,
+        titleEn: products.titleEn,
+        priceMinor: products.priceMinor,
+        sku: products.sku,
+      })
+      .from(products)
+      .where(eq(products.status, 'active')),
+  );
+  await seedOrders(
+    store.id,
+    catalogue.map((row) => ({ ...row, sku: row.sku ?? '' })),
+  );
+
   return store;
+}
+
+/**
+ * Demo orders for one store.
+ *
+ * Written directly rather than through `placeOrder()` because these are
+ * historical orders, not live carts: they have numbers, statuses and dates
+ * spread across the last fortnight, which is what the orders list, the
+ * dashboard and the customer's order history all need in order to look real.
+ * They are snapshots all the same -- title and price copied, never joined.
+ */
+async function seedOrders(
+  storeId: string,
+  catalogue: { titleAr: string; titleEn: string; priceMinor: number; sku: string }[],
+): Promise<number> {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+
+  const DEMO: {
+    daysAgo: number;
+    status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+    paymentStatus: 'unpaid' | 'paid';
+    customer: { name: string; email: string; phone: string; city: string; region: string };
+    lines: { index: number; quantity: number }[];
+  }[] = [
+    {
+      daysAgo: 0.2,
+      status: 'pending',
+      paymentStatus: 'unpaid',
+      customer: {
+        name: 'أحمد الشريف',
+        email: 'ahmed.sherif@example.com',
+        phone: '01001234567',
+        city: 'القاهرة',
+        region: 'مدينة نصر',
+      },
+      lines: [
+        { index: 0, quantity: 1 },
+        { index: 1, quantity: 2 },
+      ],
+    },
+    {
+      daysAgo: 2,
+      status: 'confirmed',
+      paymentStatus: 'unpaid',
+      customer: {
+        name: 'منى عبد الرحمن',
+        email: 'mona.abdelrahman@example.com',
+        phone: '01112345678',
+        city: 'الجيزة',
+        region: 'الدقي',
+      },
+      lines: [{ index: 2, quantity: 1 }],
+    },
+    {
+      daysAgo: 6,
+      status: 'shipped',
+      paymentStatus: 'paid',
+      customer: {
+        name: 'كريم محمود',
+        email: 'kareem.mahmoud@example.com',
+        phone: '01223456789',
+        city: 'الإسكندرية',
+        region: 'سموحة',
+      },
+      lines: [{ index: 1, quantity: 1 }],
+    },
+    {
+      daysAgo: 11,
+      status: 'delivered',
+      paymentStatus: 'paid',
+      customer: {
+        name: 'سلمى حسن',
+        email: 'salma.hassan@example.com',
+        phone: '01556789012',
+        city: 'المنصورة',
+        region: 'المنصورة',
+      },
+      lines: [
+        { index: 2, quantity: 2 },
+        { index: 3, quantity: 1 },
+      ],
+    },
+    {
+      daysAgo: 15,
+      status: 'cancelled',
+      paymentStatus: 'unpaid',
+      customer: {
+        name: 'يوسف إبراهيم',
+        email: 'youssef.ibrahim@example.com',
+        phone: '01099887766',
+        city: 'أسيوط',
+        region: 'أسيوط',
+      },
+      lines: [{ index: 3, quantity: 1 }],
+    },
+  ];
+
+  await withTenant(storeId, async (db) => {
+    // Idempotent: seeding twice must not duplicate the order book.
+    const [existing] = await db.select({ count: orders.id }).from(orders).limit(1);
+    if (existing) return;
+
+    let number = 1001;
+    for (const demo of DEMO) {
+      const lines = demo.lines
+        .map((line) => {
+          const product = catalogue[line.index];
+          if (!product) return null;
+          return {
+            product,
+            quantity: line.quantity,
+            lineTotal: product.priceMinor * line.quantity,
+          };
+        })
+        .filter((line): line is NonNullable<typeof line> => line !== null);
+      if (lines.length === 0) continue;
+
+      const subtotal = lines.reduce((total, line) => total + line.lineTotal, 0);
+      const placedAt = new Date(now - demo.daysAgo * day);
+
+      const [order] = await db
+        .insert(orders)
+        .values({
+          storeId,
+          orderNumber: number,
+          email: demo.customer.email,
+          phone: demo.customer.phone,
+          shippingName: demo.customer.name,
+          addressLine1: 'شارع الجمهورية، عمارة ١٢',
+          city: demo.customer.city,
+          region: demo.customer.region,
+          countryCode: 'EG',
+          currency: 'EGP',
+          subtotalMinor: subtotal,
+          totalMinor: subtotal,
+          status: demo.status,
+          paymentStatus: demo.paymentStatus,
+          fulfillmentStatus: demo.status === 'delivered' ? 'fulfilled' : 'unfulfilled',
+          paymentMethod: 'cash_on_delivery',
+          placedAt,
+          createdAt: placedAt,
+        })
+        .returning({ id: orders.id });
+      if (!order) continue;
+
+      await db.insert(orderItems).values(
+        lines.map((line) => ({
+          storeId,
+          orderId: order.id,
+          titleAr: line.product.titleAr,
+          titleEn: line.product.titleEn,
+          sku: line.product.sku,
+          quantity: line.quantity,
+          unitPriceMinor: line.product.priceMinor,
+          lineTotalMinor: line.lineTotal,
+          currency: 'EGP',
+        })),
+      );
+
+      number += 1;
+    }
+  });
+
+  return DEMO.length;
 }
 
 /** Enrols the demo super admin in TOTP with a seed we can print a code for. */

@@ -120,11 +120,11 @@ export default async function CartPage() {
                 <span>الإجمالي</span>
                 <span className="numeric">{formatMoney(cart.subtotal, locale)}</span>
               </div>
-              <Button className="w-full" disabled>
-                إتمام الشراء
+              <Button asChild className="w-full">
+                <Link href="/checkout">إتمام الشراء</Link>
               </Button>
               <p className="text-xs text-muted-foreground">
-                إتمام الشراء والدفع يُبنيان في مرحلة الدفع (Paymob · Fawry · الدفع عند الاستلام).
+                الدفع عند الاستلام الآن. بوابات الدفع الإلكتروني (Paymob · Fawry) تُضاف لاحقًا.
               </p>
             </CardContent>
           </Card>

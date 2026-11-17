@@ -203,13 +203,14 @@ export function ProductForm({
       <Card>
         <CardHeader>
           <CardTitle>الخيارات (المقاسات والألوان)</CardTitle>
-          <CardDescription>
-            لكل خيار سعره ومخزونه. تُحفظ القائمة كاملة عند الحفظ.
-          </CardDescription>
+          <CardDescription>لكل خيار سعره ومخزونه. تُحفظ القائمة كاملة عند الحفظ.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {variants.map((variant, index) => (
-            <div key={index} className="grid gap-2 rounded-md border p-3 md:grid-cols-[1fr_1fr_1fr_1fr_5rem_auto]">
+            <div
+              key={index}
+              className="grid gap-2 rounded-md border p-3 md:grid-cols-[1fr_1fr_1fr_1fr_5rem_auto]"
+            >
               <Input
                 name="variantTitleAr"
                 placeholder="الاسم عربي (٤٢)"
@@ -281,7 +282,10 @@ export function ProductForm({
         </CardHeader>
         <CardContent className="space-y-3">
           {images.map((image, index) => (
-            <div key={index} className="grid gap-2 rounded-md border p-3 md:grid-cols-[2fr_1fr_1fr_auto]">
+            <div
+              key={index}
+              className="grid gap-2 rounded-md border p-3 md:grid-cols-[2fr_1fr_1fr_auto]"
+            >
               <Input
                 name="imageUrl"
                 placeholder="https://…"

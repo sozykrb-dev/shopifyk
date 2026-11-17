@@ -48,13 +48,18 @@ export default async function EditProductPage({
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{product.titleAr}</h1>
           <p className="text-sm text-muted-foreground numeric">
-            {product.handle} · {formatMoney({ amount: product.priceMinor, currency: product.currency }, 'ar')}
+            {product.handle} ·{' '}
+            {formatMoney({ amount: product.priceMinor, currency: product.currency }, 'ar')}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Badge
             tone={
-              product.status === 'active' ? 'success' : product.status === 'draft' ? 'warning' : 'neutral'
+              product.status === 'active'
+                ? 'success'
+                : product.status === 'draft'
+                  ? 'warning'
+                  : 'neutral'
             }
           >
             {product.status === 'active' ? 'منشور' : product.status === 'draft' ? 'مسودة' : 'مؤرشف'}

@@ -1,10 +1,12 @@
+import Link from 'next/link';
 import { desc, sql } from 'drizzle-orm';
-import { CreditCard, Package, Store, Users } from 'lucide-react';
+import { Package, ShoppingBag, Store, Users } from 'lucide-react';
 import {
   countAuditSince,
   countStores,
   countUsers,
   listStores,
+  orders,
   plans,
   products,
   withPlatform,
@@ -148,12 +150,27 @@ async function StoreDashboard({ storeId, storeName }: { storeId: string; storeNa
       })
       .from(products);
 
+    const [orderCounts] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        pending: sql<number>`count(*) FILTER (WHERE status = 'pending')::int`,
+        paidMinor: sql<number>`COALESCE(SUM(total_minor) FILTER (WHERE payment_status = 'paid'), 0)::int`,
+      })
+      .from(orders);
+
     const latest = await db.select().from(products).orderBy(desc(products.createdAt)).limit(5);
+    const recentOrders = await db.select().from(orders).orderBy(desc(orders.placedAt)).limit(5);
 
     return {
       total: Number(counts?.total ?? 0),
       active: Number(counts?.active ?? 0),
       latest,
+      orderTotal: Number(orderCounts?.total ?? 0),
+      orderPending: Number(orderCounts?.pending ?? 0),
+      // Money is formatted on read, never in the query: the query returns
+      // minor units and `formatMoney` decides how many decimals to show.
+      paidMinor: Number(orderCounts?.paidMinor ?? 0),
+      recentOrders,
     };
   });
 
@@ -167,10 +184,21 @@ async function StoreDashboard({ storeId, storeName }: { storeId: string; storeNa
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="المنتجات" value={summary.total} icon={<Package />} />
         <StatCard label="منشور" value={summary.active} icon={<Package />} tone="success" />
-        <StatCard label="مسودات" value={summary.total - summary.active} icon={<CreditCard />} />
+        <StatCard
+          label="طلبات قيد المراجعة"
+          value={summary.orderPending}
+          icon={<ShoppingBag />}
+          tone={summary.orderPending > 0 ? 'warning' : 'neutral'}
+        />
+        <StatCard
+          label="إجمالي الطلبات"
+          value={summary.orderTotal}
+          icon={<ShoppingBag />}
+          hint={formatMoney(money(summary.paidMinor, 'EGP'), 'ar') + ' محصَّلة'}
+        />
       </div>
 
       <Card>
@@ -200,6 +228,64 @@ async function StoreDashboard({ storeId, storeName }: { storeId: string; storeNa
           </Table>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>أحدث الطلبات</CardTitle>
+          <CardDescription>
+            {summary.recentOrders.length === 0
+              ? 'لا توجد طلبات بعد.'
+              : `آخر ${summary.recentOrders.length} طلبات في متجرك`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {summary.recentOrders.length === 0 ? null : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>الطلب</TH>
+                  <TH>العميل</TH>
+                  <TH>الحالة</TH>
+                  <TH>الإجمالي</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {summary.recentOrders.map((order) => (
+                  <TR key={order.id}>
+                    <TD>
+                      <Link
+                        href={`/orders/${order.id}`}
+                        className="numeric font-medium hover:underline"
+                      >
+                        #{order.orderNumber}
+                      </Link>
+                    </TD>
+                    <TD>
+                      <p className="text-sm">{order.shippingName}</p>
+                      <p className="numeric text-xs text-muted-foreground">{order.city}</p>
+                    </TD>
+                    <TD className="text-muted-foreground">
+                      {ORDER_STATUS[order.status] ?? order.status}
+                    </TD>
+                    <TD className="numeric font-medium">
+                      {formatMoney(money(order.totalMinor, order.currency), 'ar')}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
+
+const ORDER_STATUS: Record<string, string> = {
+  pending: 'قيد المراجعة',
+  confirmed: 'مؤكَّد',
+  shipped: 'تم الشحن',
+  delivered: 'تم التسليم',
+  cancelled: 'ملغي',
+  refunded: 'مُسترجع',
+};

@@ -62,6 +62,9 @@ export async function StoreHeader({
             {signedIn ? (
               <>
                 <Button asChild variant="ghost" size="sm">
+                  <Link href="/account/orders">طلباتي</Link>
+                </Button>
+                <Button asChild variant="ghost" size="sm">
                   <Link href="/account">حسابي</Link>
                 </Button>
                 <form action={logoutAction}>

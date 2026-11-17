@@ -527,7 +527,15 @@ export const carts = pgTable(
     updatedAt,
   },
   (table) => [
-    uniqueIndex('carts_guest_token_key').on(table.storeId, table.guestTokenHash),
+    /*
+     * At most one *active* cart per guest token, not at most one cart ever: a
+     * checked-out cart keeps its row (it is the order's history) and must not
+     * stop the same visitor from starting a new one. A partial unique index is
+     * the constraint that actually expresses that.
+     */
+    uniqueIndex('carts_guest_token_key')
+      .on(table.storeId, table.guestTokenHash)
+      .where(sql`${table.status} = 'active'`),
     index('carts_customer_idx').on(table.storeId, table.customerUserId),
   ],
 );
@@ -570,6 +578,136 @@ export const cartItems = pgTable(
       .where(sql`${table.variantId} IS NOT NULL`),
     index('cart_items_cart_idx').on(table.storeId, table.cartId),
   ],
+);
+
+/*
+ * Orders.
+ *
+ * An order is a snapshot, not a live view: the customer's name, address and
+ * the price of every line are copied here at checkout. Editing a product or
+ * deleting a customer address afterwards must never change what an order says,
+ * because the order is a promise about the past.
+ *
+ * `order_number` is per store and human-facing (1001, 1002, …); the uuid is
+ * what the code uses, and `order_number` is what a merchant reads out on the
+ * phone.
+ */
+export const orderStatusEnum = pgEnum('order_status', [
+  'pending',
+  'confirmed',
+  'shipped',
+  'delivered',
+  'cancelled',
+  'refunded',
+]);
+
+export const paymentStatusEnum = pgEnum('payment_status', [
+  'unpaid',
+  'authorized',
+  'paid',
+  'refunded',
+  'failed',
+]);
+
+export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
+  'unfulfilled',
+  'partial',
+  'fulfilled',
+]);
+
+export const orders = pgTable(
+  'orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    /** Per-store, human-facing, gap-free by virtue of the unique index. */
+    orderNumber: integer('order_number').notNull(),
+    customerUserId: uuid('customer_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** The cart this order came from, so checkout is traceable (and idempotent). */
+    cartId: uuid('cart_id').references(() => carts.id, { onDelete: 'set null' }),
+
+    status: orderStatusEnum('status').notNull().default('pending'),
+    paymentStatus: paymentStatusEnum('payment_status').notNull().default('unpaid'),
+    fulfillmentStatus: fulfillmentStatusEnum('fulfillment_status').notNull().default('unfulfilled'),
+
+    /** Contact details, captured at checkout. */
+    email: text('email').notNull(),
+    phone: text('phone'),
+    /** Shipping name: separate from the user's profile, which can change later. */
+    shippingName: text('shipping_name').notNull(),
+
+    /*
+     * Address as free-form lines rather than a normalised model: Egyptian
+     * addresses do not fit a state/postcode shape, and a wrong "state" field is
+     * worse than no field.
+     */
+    addressLine1: text('address_line1').notNull(),
+    addressLine2: text('address_line2'),
+    city: text('city').notNull(),
+    region: text('region'),
+    countryCode: text('country_code').notNull().default('EG'),
+    notes: text('notes'),
+
+    /** Money, all in minor units of `currency`. */
+    currency: currencyCode('currency'),
+    subtotalMinor: moneyMinorUnits('subtotal_minor').default(0),
+    shippingMinor: moneyMinorUnits('shipping_minor').default(0),
+    discountMinor: moneyMinorUnits('discount_minor').default(0),
+    taxMinor: moneyMinorUnits('tax_minor').default(0),
+    totalMinor: moneyMinorUnits('total_minor').default(0),
+
+    /** How the customer chose to pay; the gateway reference lands here later. */
+    paymentMethod: text('payment_method').notNull().default('cash_on_delivery'),
+    paymentReference: text('payment_reference'),
+
+    placedAt: timestamp('placed_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('orders_store_number_key').on(table.storeId, table.orderNumber),
+    index('orders_store_customer_idx').on(table.storeId, table.customerUserId),
+    index('orders_store_placed_idx').on(table.storeId, table.placedAt),
+    // One order per cart: re-submitting the checkout form must not double-charge.
+    uniqueIndex('orders_cart_key').on(table.storeId, table.cartId),
+  ],
+);
+
+/**
+ * Order lines.
+ *
+ * Like the order itself, each line is a snapshot: title, variant name, SKU and
+ * unit price as they were when the order was placed.
+ */
+export const orderItems = pgTable(
+  'order_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id').references(() => products.id, { onDelete: 'set null' }),
+    variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'set null' }),
+
+    titleAr: text('title_ar').notNull(),
+    titleEn: text('title_en').notNull(),
+    variantTitleAr: text('variant_title_ar'),
+    variantTitleEn: text('variant_title_en'),
+    sku: text('sku'),
+
+    quantity: integer('quantity').notNull(),
+    unitPriceMinor: moneyMinorUnits('unit_price_minor').default(0),
+    /** quantity * unitPriceMinor, stored so reports never recompute it. */
+    lineTotalMinor: moneyMinorUnits('line_total_minor').default(0),
+    currency: currencyCode('currency'),
+    createdAt,
+  },
+  (table) => [index('order_items_order_idx').on(table.storeId, table.orderId)],
 );
 
 export const products = pgTable(
@@ -629,6 +767,10 @@ export type NewProductVariant = typeof productVariants.$inferInsert;
 export type Cart = typeof carts.$inferSelect;
 export type NewCart = typeof carts.$inferInsert;
 export type CartItem = typeof cartItems.$inferSelect;
+export type Order = typeof orders.$inferSelect;
+export type NewOrder = typeof orders.$inferInsert;
+export type OrderItem = typeof orderItems.$inferSelect;
+export type NewOrderItem = typeof orderItems.$inferInsert;
 export type NewCartItem = typeof cartItems.$inferInsert;
 
 export const schema = {

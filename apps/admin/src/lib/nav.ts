@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Package,
   ScrollText,
+  ShoppingBag,
   Store,
   type LucideIcon,
 } from 'lucide-react';
@@ -35,6 +36,7 @@ const PLATFORM_NAV: readonly NavItem[] = [
 
 const STORE_NAV: readonly NavItem[] = [
   OVERVIEW,
+  { href: '/orders', label: 'الطلبات', icon: ShoppingBag },
   { href: '/products', label: 'المنتجات', icon: Package },
 ];
 

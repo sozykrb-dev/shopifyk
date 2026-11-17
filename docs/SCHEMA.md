@@ -126,13 +126,16 @@ amounts in different currencies. New stores default to `EGP`.
 
 ## Enums
 
-| Enum             | Values                                                                          |
-| ---------------- | ------------------------------------------------------------------------------- |
-| `auth_context`   | `super_admin`, `platform_staff`, `merchant_owner`, `merchant_staff`, `customer` |
-| `cart_status`    | `active`, `converted`, `abandoned`                                              |
-| `account_status` | `pending_verification`, `active`, `disabled`                                    |
-| `store_status`   | `active`, `suspended`, `closed`                                                 |
-| `role_scope`     | `platform`, `store`                                                             |
-| `plan_interval`  | `monthly`, `yearly`                                                             |
-| `product_status` | `draft`, `active`, `archived`                                                   |
-| `domain_type`    | `subdomain`, `custom`                                                           |
+| Enum                 | Values                                                                          |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `auth_context`       | `super_admin`, `platform_staff`, `merchant_owner`, `merchant_staff`, `customer` |
+| `cart_status`        | `active`, `converted`, `abandoned`                                              |
+| `order_status`       | `pending`, `confirmed`, `shipped`, `delivered`, `cancelled`, `refunded`         |
+| `payment_status`     | `unpaid`, `authorized`, `paid`, `refunded`, `failed`                            |
+| `fulfillment_status` | `unfulfilled`, `partial`, `fulfilled`                                           |
+| `account_status`     | `pending_verification`, `active`, `disabled`                                    |
+| `store_status`       | `active`, `suspended`, `closed`                                                 |
+| `role_scope`         | `platform`, `store`                                                             |
+| `plan_interval`      | `monthly`, `yearly`                                                             |
+| `product_status`     | `draft`, `active`, `archived`                                                   |
+| `domain_type`        | `subdomain`, `custom`                                                           |

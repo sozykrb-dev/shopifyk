@@ -15,6 +15,7 @@ describe('admin navigation', () => {
       expect(hrefs).toContain('/stores');
       expect(hrefs).toContain('/audit');
       expect(hrefs).not.toContain('/products');
+      expect(hrefs).not.toContain('/orders');
     }
   });
 
@@ -22,6 +23,7 @@ describe('admin navigation', () => {
     for (const context of ['merchant_owner', 'merchant_staff'] as const) {
       const hrefs = visibleNavItems(context).map((item) => item.href);
       expect(hrefs).toContain('/products');
+      expect(hrefs).toContain('/orders');
       expect(hrefs).not.toContain('/stores');
       expect(hrefs).not.toContain('/audit');
       expect(hrefs).not.toContain('/system');

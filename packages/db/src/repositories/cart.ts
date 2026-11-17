@@ -27,6 +27,7 @@ export type CartLine = CartItem & {
   titleAr: string;
   titleEn: string;
   handle: string;
+  sku: string | null;
   imageUrl: string | null;
   variantTitleAr: string | null;
   variantTitleEn: string | null;
@@ -134,15 +135,21 @@ async function loadLines(db: Database, cartId: string): Promise<CartLine[]> {
       titleAr: products.titleAr,
       titleEn: products.titleEn,
       handle: products.handle,
+      productSku: products.sku,
       imageUrl: productImages.url,
+      variantTitleAr: productVariants.titleAr,
+      variantTitleEn: productVariants.titleEn,
+      variantSku: productVariants.sku,
     })
     .from(cartItems)
     .innerJoin(products, eq(products.id, cartItems.productId))
-    // Left join: a product with no image still renders.
+    // Left joins: a product with no image, or a line with no variant, still
+    // has to render.
     .leftJoin(
       productImages,
       and(eq(productImages.productId, cartItems.productId), eq(productImages.position, 0)),
     )
+    .leftJoin(productVariants, eq(productVariants.id, cartItems.variantId))
     .where(and(eq(cartItems.storeId, requireTenantId()), eq(cartItems.cartId, cartId)))
     .orderBy(asc(cartItems.createdAt));
 
@@ -153,9 +160,11 @@ async function loadLines(db: Database, cartId: string): Promise<CartLine[]> {
       titleAr: row.titleAr,
       titleEn: row.titleEn,
       handle: row.handle,
+      // A variant's SKU is more specific than the product's, when there is one.
+      sku: row.variantSku ?? row.productSku,
       imageUrl: row.imageUrl,
-      variantTitleAr: null,
-      variantTitleEn: null,
+      variantTitleAr: row.variantTitleAr,
+      variantTitleEn: row.variantTitleEn,
       unitPrice,
       lineTotal: money(row.item.unitPriceMinor * row.item.quantity, row.item.currency),
     };

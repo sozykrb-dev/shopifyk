@@ -117,6 +117,13 @@ A guest cart is keyed by a random cookie token; only its SHA-256 is stored. On
 sign-in the guest cart is **claimed** by the customer rather than merged, so a
 half-filled basket is never silently dropped.
 
+An order is a **snapshot**, not a live view: the customer's name, address and
+every line's price are copied at checkout. Renaming a product or changing its
+price afterwards must not re-write what somebody already agreed to pay. Two
+guards make checkout safe to re-submit: a unique index so one cart can only
+ever become one order, and a per-store sequence so each store numbers its own
+orders from 1001.
+
 ---
 
 ## Demo accounts

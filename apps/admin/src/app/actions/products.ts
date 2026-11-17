@@ -57,10 +57,12 @@ function readFields(formData: FormData): ProductFormFields {
     descriptionAr: String(formData.get('descriptionAr') ?? '').trim(),
     descriptionEn: String(formData.get('descriptionEn') ?? '').trim(),
     price: String(formData.get('price') ?? ''),
-    currency: String(formData.get('currency') ?? 'EGP').trim().toUpperCase(),
+    currency: String(formData.get('currency') ?? 'EGP')
+      .trim()
+      .toUpperCase(),
     sku: String(formData.get('sku') ?? '').trim(),
     inventory: String(formData.get('inventory') ?? '0').trim(),
-    status: (String(formData.get('status') ?? 'draft') as ProductFormFields['status']),
+    status: String(formData.get('status') ?? 'draft') as ProductFormFields['status'],
   };
 }
 
@@ -125,19 +127,23 @@ function variantRows(formData: FormData): {
   return rows;
 }
 
-function imageRows(formData: FormData): { url: string; altAr: string | null; altEn: string | null }[] {
+function imageRows(
+  formData: FormData,
+): { url: string; altAr: string | null; altEn: string | null }[] {
   const urls = formData.getAll('imageUrl').map((value) => String(value).trim());
   const altsAr = formData.getAll('imageAltAr').map(String);
   const altsEn = formData.getAll('imageAltEn').map(String);
 
-  return urls
-    .map((url, index) => ({
-      url,
-      altAr: altsAr[index]?.trim() || null,
-      altEn: altsEn[index]?.trim() || null,
-    }))
-    // Only https URLs: a `javascript:` URL in an image field is a stored XSS.
-    .filter((image) => /^https:\/\/\S+$/.test(image.url));
+  return (
+    urls
+      .map((url, index) => ({
+        url,
+        altAr: altsAr[index]?.trim() || null,
+        altEn: altsEn[index]?.trim() || null,
+      }))
+      // Only https URLs: a `javascript:` URL in an image field is a stored XSS.
+      .filter((image) => /^https:\/\/\S+$/.test(image.url))
+  );
 }
 
 export async function createProductAction(

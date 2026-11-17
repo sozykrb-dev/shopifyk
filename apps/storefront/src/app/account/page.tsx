@@ -55,7 +55,10 @@ export default async function AccountPage() {
             )}
           </p>
           <p className="text-muted-foreground">
-            الطلبات وإدارة العنوان تُضاف في مرحلة إتمام الشراء.
+            <Link href="/account/orders" className="underline">
+              عرض طلباتي
+            </Link>{' '}
+            — وإدارة العناوين تأتي في مرحلة الحسابات.
           </p>
         </CardContent>
       </Card>

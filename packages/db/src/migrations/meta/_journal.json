@@ -36,6 +36,20 @@
       "when": 1794890290170,
       "tag": "0004_cart_line_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794891787631,
+      "tag": "0005_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794892325729,
+      "tag": "0006_one_active_cart_per_guest",
+      "breakpoints": true
     }
   ]
 }
