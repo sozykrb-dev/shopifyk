@@ -3,12 +3,16 @@ import Link from 'next/link';
 import { formatMoney, money } from '@velnorix/core';
 import { PERMISSION } from '@velnorix/auth';
 import {
+  findStoreById,
+  getSubscriptionForStore,
   invoices,
+  listInvoices,
   listStores,
   plans,
   storeRevenue,
   withPlatform,
   withPlatformTenant,
+  withTenant,
 } from '@velnorix/db';
 import { asc } from 'drizzle-orm';
 import {
@@ -27,6 +31,7 @@ import {
   TR,
 } from '@velnorix/ui';
 import { StatCard } from '@/components/stat-card.js';
+import { isStoreContext } from '@/lib/nav.js';
 import { requirePrincipal } from '@/lib/session.js';
 
 export const metadata: Metadata = { title: 'الفوترة' };
@@ -55,13 +60,202 @@ const INVOICE_STATUS: Record<
 };
 
 /**
+ * `/billing` means two different things to two different people.
+ *
+ * To the platform it is "who owes us what": MRR across every store, plans,
+ * outstanding invoices. To a merchant it is "what do I owe": my plan, my
+ * renewal date, my invoices. Same route, two audiences, chosen by context --
+ * a merchant asking for /billing is asking about themselves, and showing them
+ * the platform's revenue would be a data leak dressed up as a nav item.
+ */
+export default async function BillingPage() {
+  const { principal, storeId } = await requirePrincipal([
+    'super_admin',
+    'platform_staff',
+    'merchant_owner',
+    'merchant_staff',
+  ]);
+
+  if (isStoreContext(principal.context)) {
+    if (!storeId) {
+      return <EmptyState title="غير مسموح" description="هذا النطاق غير مرتبط بأي متجر." />;
+    }
+    if (!principal.permissions.has(PERMISSION.STORE_BILLING_READ)) {
+      return <EmptyState title="غير مسموح" description="حسابك لا يملك صلاحية عرض فوترة المتجر." />;
+    }
+    return <MerchantBilling storeId={storeId} />;
+  }
+
+  return <PlatformBilling />;
+}
+
+/**
+ * The merchant's own subscription and invoices.
+ *
+ * Reads the plan as a *join from the store's own subscription row* rather than
+ * trusting a plan id from anywhere else, so what the merchant sees is exactly
+ * what the billing engine will charge them against.
+ */
+async function MerchantBilling({ storeId }: { storeId: string }) {
+  const store = await withPlatformTenant(storeId, (db) => findStoreById(db, storeId));
+  if (!store) {
+    return <EmptyState title="لم يتم العثور على المتجر" description="تعذر تحميل بيانات المتجر." />;
+  }
+
+  const [subscription, storeInvoices, planRows] = await Promise.all([
+    withTenant(storeId, (db) => getSubscriptionForStore(db, storeId)),
+    withTenant(storeId, (db) => listInvoices(db, storeId, { limit: 50 })),
+    withPlatform((db) => db.select().from(plans).orderBy(asc(plans.priceMinor))),
+  ]);
+
+  const plan = planRows.find((row) => row.id === subscription?.planId) ?? null;
+  const outstandingMinor = storeInvoices
+    .filter((invoice) => invoice.status === 'open')
+    .reduce((total, invoice) => total + invoice.totalMinor, 0);
+
+  const status = subscription
+    ? (SUBSCRIPTION_STATUS[subscription.status] ?? {
+        label: subscription.status,
+        tone: 'neutral' as const,
+      })
+    : null;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">الاشتراك والفواتير</h1>
+        <p className="text-sm text-muted-foreground">
+          خطة متجرك وفواتيرك. أسعار الخطط المزروعة قيم مؤقتة بانتظار قرار تجاري (ADR 0007).
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label="الخطة الحالية"
+          value={plan?.nameAr ?? '—'}
+          icon={<span className="numeric">{plan ? `${plan.key}` : '—'}</span>}
+        />
+        <StatCard
+          label="حالة الاشتراك"
+          value={status?.label ?? '—'}
+          icon={<span>{subscription ? '●' : '—'}</span>}
+          tone={subscription?.status === 'active' ? 'success' : 'warning'}
+        />
+        <StatCard
+          label="مبالغ مستحقة"
+          value={formatMoney(money(outstandingMinor, plan?.currency ?? 'EGP'), 'ar')}
+          icon={<span>!</span>}
+          tone={outstandingMinor > 0 ? 'warning' : 'success'}
+        />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>تفاصيل الاشتراك</CardTitle>
+          <CardDescription>
+            {subscription ? 'الاشتراك الحالي لهذا المتجر.' : 'لا يوجد اشتراك مسجل لهذا المتجر بعد.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {subscription ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ReadOnly label="الخطة" value={plan?.nameAr ?? subscription.planId} />
+              <ReadOnly
+                label="السعر الشهري"
+                value={plan ? formatMoney(money(plan.priceMinor, plan.currency), 'ar') : '—'}
+              />
+              <ReadOnly
+                label="بداية الفترة الحالية"
+                value={subscription.currentPeriodStart.toLocaleDateString('ar-EG')}
+              />
+              <ReadOnly
+                label="نهاية الفترة الحالية"
+                value={subscription.currentPeriodEnd.toLocaleDateString('ar-EG')}
+              />
+              <ReadOnly
+                label="نهاية الفترة التجريبية"
+                value={subscription.trialEndsAt?.toLocaleDateString('ar-EG') ?? '—'}
+              />
+              <ReadOnly
+                label="عمولة المعاملات"
+                value={plan ? `${(plan.transactionFeeBps / 100).toFixed(2)}٪` : '—'}
+              />
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>الفواتير</CardTitle>
+          <CardDescription>كل الفواتير الصادرة لهذا المتجر.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {storeInvoices.length === 0 ? (
+            <div className="p-6">
+              <EmptyState title="لا توجد فواتير" description="لم تُصدر أي فاتورة لهذا المتجر بعد." />
+            </div>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>الفاتورة</TH>
+                  <TH>الحالة</TH>
+                  <TH>تاريخ الإصدار</TH>
+                  <TH>تاريخ الاستحقاق</TH>
+                  <TH>الإجمالي</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {storeInvoices.map((invoice) => {
+                  const invoiceStatus = INVOICE_STATUS[invoice.status] ?? {
+                    label: invoice.status,
+                    tone: 'neutral' as const,
+                  };
+                  return (
+                    <TR key={invoice.id}>
+                      <TD className="numeric font-medium">#{invoice.invoiceNumber}</TD>
+                      <TD>
+                        <Badge tone={invoiceStatus.tone}>{invoiceStatus.label}</Badge>
+                      </TD>
+                      <TD className="numeric text-muted-foreground">
+                        {invoice.issuedAt?.toLocaleDateString('ar-EG') ?? '—'}
+                      </TD>
+                      <TD className="numeric text-muted-foreground">
+                        {invoice.dueAt?.toLocaleDateString('ar-EG') ?? '—'}
+                      </TD>
+                      <TD className="numeric font-medium">
+                        {formatMoney(money(invoice.totalMinor, invoice.currency ?? 'EGP'), 'ar')}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ReadOnly({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-medium">{value}</p>
+    </div>
+  );
+}
+
+/**
  * Platform billing.
  *
  * Every figure is read per store inside `withPlatformTenant(store.id)` and
  * summed here: billing rows are tenant data, so there is deliberately no
  * "read every invoice in one query" path that could leak across tenants.
  */
-export default async function BillingPage() {
+async function PlatformBilling() {
   const { principal } = await requirePrincipal(['super_admin', 'platform_staff']);
   if (!principal.permissions.has(PERMISSION.PLATFORM_BILLING_READ)) {
     return <EmptyState title="غير مسموح" description="حسابك لا يملك صلاحية عرض الفوترة." />;

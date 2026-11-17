@@ -197,6 +197,26 @@ A revoked account is disabled, never deleted. Deleting the membership would
 leave orders and audit entries pointing at someone who appears never to have
 worked there, which is worse than a locked door.
 
+### Billing, for both sides of it
+
+`/billing` means two different things to two different people, and it answers
+both from the same route.
+
+To the platform it is _who owes us what_: MRR across every store, the plan
+catalogue, outstanding invoices. To a merchant it is _what do I owe_: my plan,
+my renewal date, my invoices. The audience is chosen by context — a merchant
+asking for `/billing` is asking about themselves, and showing them the
+platform's revenue would be a data leak wearing a nav item.
+
+The merchant half was missing for a while, which in practice means a shop
+owner learns what they owe when a charge appears on their card. The permission
+(`store:billing.read`) had been seeded since Phase 2; nothing read it.
+
+Worth knowing: `startSubscription` takes the trial length as an argument and
+does **not** read it off the plan. Callers pass `plan.trialDays`, as the seed
+does. Forgetting to is a silent downgrade — the store skips its trial and is
+billed from day one, and nothing errors.
+
 ### Catalogue
 
 `/products` is the store's catalogue: server-rendered, with search and

@@ -11,6 +11,7 @@ import {
   issueInvoice,
   listInvoices,
   listOverdueInvoices,
+  withTenant,
   markInvoicePaid,
   nextPeriod,
   storeRevenue,
@@ -27,6 +28,9 @@ import {
  * somebody's favour. These tests pin the two rules that bite: an invoice is a
  * document that does not re-price, and a subscription period must not drift
  * when a month is shorter than the one before it.
+ *
+ * The third rule is newer and matters more now that merchants can read their
+ * own billing page: a merchant's invoice list is theirs and nobody else's.
  */
 describe('billing: subscriptions and invoices', () => {
   let store: Store;
@@ -327,6 +331,77 @@ describe('billing: subscriptions and invoices', () => {
       const revenue = await withPlatformTenant(store.id, (db) => storeRevenue(db, store.id));
       expect(revenue.mrrMinor).toBe(0);
       expect(revenue.status).toBe('cancelled');
+    });
+  });
+
+  describe('the merchant billing view', () => {
+    /*
+     * `/billing` serves two audiences from one route. The merchant half is
+     * only safe if the repository refuses to hand over another store's
+     * invoices -- otherwise "what do I owe" becomes "what does my competitor
+     * owe", and nothing about the page looks broken when it happens.
+     */
+    it("lists one store's invoices and not another's", async () => {
+      const other = await withPlatform((db) =>
+        createStore(db, { slug: 'billing-shop-2', name: 'Second', planId: starterId }),
+      );
+
+      const line = {
+        descriptionAr: 'اشتراك',
+        descriptionEn: 'Subscription',
+        quantity: 1,
+        unitAmountMinor: 5_000,
+        totalMinor: 5_000,
+      };
+
+      await withPlatformTenant(store.id, (db) =>
+        issueInvoice(db, { storeId: store.id, lines: [line] }),
+      );
+      await withPlatformTenant(other.id, (db) =>
+        issueInvoice(db, {
+          storeId: other.id,
+          lines: [{ ...line, totalMinor: 9_000, unitAmountMinor: 9_000 }],
+        }),
+      );
+
+      const mine = await withTenant(store.id, (db) => listInvoices(db, store.id));
+      expect(mine).toHaveLength(1);
+      expect(mine[0]?.totalMinor).toBe(5_000);
+
+      const theirs = await withTenant(other.id, (db) => listInvoices(db, other.id));
+      expect(theirs).toHaveLength(1);
+      expect(theirs[0]?.totalMinor).toBe(9_000);
+
+      // Both are "invoice 1" -- numbering is per store, so the number alone
+      // is not a key. The store id is.
+      expect(mine[0]?.invoiceNumber).toBe(theirs[0]?.invoiceNumber);
+    });
+
+    it('reads the subscription through the tenant scope', async () => {
+      const growth = await withPlatform(async (db) => {
+        const [row] = await db.select().from(plans).where(eq(plans.id, growthId));
+        return row!;
+      });
+
+      // `startSubscription` does not read the trial off the plan -- the caller
+      // passes it, the way the seed does. Forgetting to is a silent downgrade:
+      // the store skips its trial and is billed from day one.
+      await withPlatformTenant(store.id, (db) =>
+        startSubscription(db, {
+          storeId: store.id,
+          planId: growthId,
+          trialDays: growth.trialDays,
+        }),
+      );
+
+      // The merchant page reads the subscription inside `withTenant`, which is
+      // the same scope the billing engine writes in. If the two ever diverge,
+      // the merchant sees a plan they are not being charged for.
+      const subscription = await withTenant(store.id, (db) =>
+        getSubscriptionForStore(db, store.id),
+      );
+      expect(subscription?.planId).toBe(growthId);
+      expect(subscription?.status).toBe(growth.trialDays > 0 ? 'trialing' : 'active');
     });
   });
 });

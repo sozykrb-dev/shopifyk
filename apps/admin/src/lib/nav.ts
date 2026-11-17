@@ -45,6 +45,7 @@ const STORE_NAV: readonly NavItem[] = [
   { href: '/products', label: 'المنتجات', icon: Package },
   { href: '/pricing', label: 'التسعير', icon: Tags },
   { href: '/staff', label: 'فريق العمل', icon: Users },
+  { href: '/billing', label: 'الاشتراك', icon: Receipt },
   { href: '/settings', label: 'الإعدادات', icon: Settings },
 ];
 
