@@ -85,8 +85,16 @@ redirect, so links and analytics stay clean.
 ## Demo accounts
 
 `pnpm db:seed` prints this table; the password is `SEED_PASSWORD` from `.env`
-(`Sahara!Dune#2026` by default) and the super admin's TOTP seed is
-`SEED_TOTP_SECRET` (`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`).
+(`Sahara!Dune#2026` by default). The super admin needs a 6-digit TOTP code,
+which changes every 30 seconds — print the live one with:
+
+```bash
+pnpm totp
+```
+
+It also prints the `otpauth://` URI for enrolling the seed
+(`SEED_TOTP_SECRET`, `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` by default) in an
+authenticator app once, after which you never need the command again.
 
 | Email                         | Context          | Where                          | Second factor   |
 | ----------------------------- | ---------------- | ------------------------------ | --------------- |
