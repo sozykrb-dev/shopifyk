@@ -232,6 +232,9 @@ describe('orders repository', () => {
         handle: 'cap',
         priceMinor: 50_00,
         currency: 'EGP',
+        // Stock is enforced now: an order can only be placed for units that
+        // exist, so this product has to have some.
+        inventoryQuantity: 10,
       }),
     );
     const otherCart = await withTenant(other.id, (db) =>

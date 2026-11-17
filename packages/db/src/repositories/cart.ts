@@ -1,7 +1,15 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-import { TenantIsolationError, money, sha256Hex, sum, type Money } from '@velnorix/core';
+import {
+  InsufficientStockError,
+  TenantIsolationError,
+  money,
+  sha256Hex,
+  sum,
+  type Money,
+} from '@velnorix/core';
 import type { Database } from '../client.js';
 import { requireTenantId } from '../tenant-context.js';
+import { productStock, variantStock } from './products.js';
 import {
   cartItems,
   carts,
@@ -224,9 +232,34 @@ export async function addCartItem(db: Database, input: AddToCartInput): Promise<
     throw new TenantIsolationError('Product does not belong to this store.');
   }
 
+  /*
+   * Stock is a ceiling on the line, not a gate on the cart.
+   *
+   * The cart is a wish list: stock is only truly taken when the order is
+   * placed, where `reserveStock` refuses to go below zero inside the order's
+   * own transaction. Clamping here stops a customer cheerfully filling a cart
+   * with stock that does not exist, and the order-time check is what actually
+   * makes overselling impossible -- even for a cart filled before the stock
+   * ran out.
+   */
+  let stockLimit = 99;
+  if (!variantId) {
+    const [productRow] = await db
+      .select({ inventoryQuantity: products.inventoryQuantity })
+      .from(products)
+      .where(and(eq(products.id, input.productId), eq(products.storeId, storeId)))
+      .limit(1);
+    if (productRow && productRow.inventoryQuantity <= 0) {
+      throw new InsufficientStockError([input.productId]);
+    }
+    if (productRow) stockLimit = Math.max(1, productRow.inventoryQuantity);
+  }
   if (variantId) {
     const [variant] = await db
-      .select({ id: productVariants.id })
+      .select({
+        id: productVariants.id,
+        inventoryQuantity: productVariants.inventoryQuantity,
+      })
       .from(productVariants)
       .where(
         and(
@@ -239,7 +272,13 @@ export async function addCartItem(db: Database, input: AddToCartInput): Promise<
     if (!variant) {
       throw new TenantIsolationError('Variant does not belong to this product.');
     }
+    if (variant.inventoryQuantity <= 0) {
+      throw new InsufficientStockError([variantId]);
+    }
+    stockLimit = Math.max(1, variant.inventoryQuantity);
   }
+
+  const wanted = Math.min(quantity, stockLimit);
 
   const [line] = await db
     .insert(cartItems)
@@ -248,7 +287,7 @@ export async function addCartItem(db: Database, input: AddToCartInput): Promise<
       cartId: input.cartId,
       productId: input.productId,
       variantId,
-      quantity,
+      quantity: wanted,
       unitPriceMinor: input.unitPriceMinor,
       currency: input.currency,
     })
@@ -264,7 +303,7 @@ export async function addCartItem(db: Database, input: AddToCartInput): Promise<
           ? sql`${cartItems.variantId} IS NULL`
           : sql`${cartItems.variantId} IS NOT NULL`,
       set: {
-        quantity: sql`LEAST(99, ${cartItems.quantity} + ${quantity})`,
+        quantity: sql`LEAST(${stockLimit}, ${cartItems.quantity} + ${wanted})`,
         updatedAt: new Date(),
       },
     })
@@ -281,9 +320,31 @@ export async function setCartItemQuantity(
     await removeCartItem(db, itemId);
     return;
   }
+
+  /*
+   * A quantity typed into the cart is capped by the stock that backs it, the
+   * same way adding an item is. Otherwise a customer sets 99, reaches checkout
+   * and is told the item is unavailable -- which is true, but is a surprise
+   * the cart could have prevented.
+   */
+  const [line] = await db
+    .select({ variantId: cartItems.variantId, productId: cartItems.productId })
+    .from(cartItems)
+    .where(and(eq(cartItems.storeId, requireTenantId()), eq(cartItems.id, itemId)))
+    .limit(1);
+
+  let cap = 99;
+  if (line?.variantId) {
+    const stock = await variantStock(db, [line.variantId]);
+    cap = Math.max(1, stock.get(line.variantId) ?? 99);
+  } else if (line?.productId) {
+    const stock = await productStock(db, [line.productId]);
+    cap = Math.max(1, stock.get(line.productId) ?? 99);
+  }
+
   await db
     .update(cartItems)
-    .set({ quantity: Math.min(Math.trunc(quantity), 99), updatedAt: new Date() })
+    .set({ quantity: Math.min(Math.trunc(quantity), cap), updatedAt: new Date() })
     .where(and(eq(cartItems.storeId, requireTenantId()), eq(cartItems.id, itemId)));
 }
 

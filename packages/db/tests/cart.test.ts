@@ -162,7 +162,7 @@ describe('cart repository', () => {
     expect(withLines.lines[0]!.quantity).toBe(3);
   });
 
-  it('clamps the quantity to 1..99', async () => {
+  it('caps the quantity at the stock that backs it, not at 99', async () => {
     const cart = await withTenant(store.id, (db) => getOrCreateGuestCart(db, 'clamp', 'EGP'));
     const line = await withTenant(store.id, (db) =>
       addCartItem(db, {
@@ -192,7 +192,9 @@ describe('cart repository', () => {
     withLines = await withTenant(store.id, (db) => getCart(db, cart));
     await withTenant(store.id, (db) => setCartItemQuantity(db, withLines.lines[0]!.id, 500));
     withLines = await withTenant(store.id, (db) => getCart(db, cart));
-    expect(withLines.lines[0]!.quantity).toBe(99);
+    // The product carries 10 units, so 500 becomes 10: a quantity the store
+    // cannot supply is not a quantity the cart should hold.
+    expect(withLines.lines[0]!.quantity).toBe(10);
   });
 
   it('removes a line and clears the cart', async () => {

@@ -119,6 +119,31 @@ half-filled basket is never silently dropped.
 
 ### Pricing
 
+### Inventory
+
+Stock is taken **when the order is placed**, not when the item is added to the
+cart — inside the order's own transaction, with a `WHERE inventory_quantity >=
+qty` guard. Two customers buying the last unit at the same instant cannot both
+succeed, because the database decides, not a read-then-write in application
+code. If any line would oversell, the whole order rolls back: no order, no
+items, no stock taken, and the cart is left spendable.
+
+Two places hold stock, and both are real: a **variant** when a product comes in
+sizes or colours, and the **product** itself when it does not. A reservation
+that only understood variants would be a silent no-op for every store that
+sells whole products — which is most of them.
+
+The cart is capped by the stock that backs it, so a customer is not sent to
+checkout with 99 of something the store has three of. A sold-out product
+disables its own add-to-cart button rather than failing at the till.
+
+### Catalogue
+
+`/products` is the store's catalogue: server-rendered, with search and
+cursor-based paging. Search and paging live in the URL, so a filtered view is a
+link a customer can share. Paging is a cursor rather than an OFFSET, because
+page 900 of an OFFSET query makes Postgres walk 36,000 rows to throw them away.
+
 Tax, shipping and coupons are **data, not code**. A merchant changes what they
 charge on the **التسعير** page of their store console; the engine that applies
 the rules (`packages/pricing`) is a pure function over those rows, and is never

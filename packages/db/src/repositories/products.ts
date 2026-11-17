@@ -1,8 +1,14 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { buildPage, decodeCursor, TenantIsolationError, type Page } from '@velnorix/core';
 import type { Database } from '../client.js';
 import { requireTenantId } from '../tenant-context.js';
-import { products, type NewProduct, type Product } from '../schema.js';
+import {
+  productVariants,
+  products,
+  type NewProduct,
+  type Product,
+  type ProductVariant,
+} from '../schema.js';
 
 /**
  * Tenant-scoped product repository.
@@ -71,6 +77,228 @@ export async function listProducts(
     k: row.createdAt.toISOString(),
     i: row.id,
   }));
+}
+
+/**
+ * Stock that is actually available.
+ *
+ * Two places hold stock, and both are real:
+ *
+ *   - a **variant** (`product_variants.inventory_quantity`) when the product
+ *     comes in sizes or colours;
+ *   - the **product** itself (`products.inventory_quantity`) when it does not.
+ *
+ * A line therefore names which of the two it draws from, and a reservation
+ * that only understood variants would be a silent no-op for every store that
+ * sells whole products -- which is most of them.
+ */
+export type StockLine = {
+  productId?: string | null;
+  variantId?: string | null;
+  quantity: number;
+};
+
+export async function variantStock(
+  db: Database,
+  variantIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (variantIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: productVariants.id, quantity: productVariants.inventoryQuantity })
+    .from(productVariants)
+    .where(
+      and(
+        eq(productVariants.storeId, requireTenantId()),
+        inArray(productVariants.id, [...variantIds]),
+      ),
+    );
+  return new Map(rows.map((row) => [row.id, row.quantity]));
+}
+
+export async function productStock(
+  db: Database,
+  productIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (productIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: products.id, quantity: products.inventoryQuantity })
+    .from(products)
+    .where(and(eq(products.storeId, requireTenantId()), inArray(products.id, [...productIds])));
+  return new Map(rows.map((row) => [row.id, row.quantity]));
+}
+
+/** How many of this line may be sold at all: variant stock, else product stock. */
+export async function stockLimitFor(
+  db: Database,
+  line: { productId?: string | null; variantId?: string | null },
+): Promise<number> {
+  if (line.variantId) {
+    const stock = await variantStock(db, [line.variantId]);
+    return stock.get(line.variantId) ?? 0;
+  }
+  if (line.productId) {
+    const stock = await productStock(db, [line.productId]);
+    return stock.get(line.productId) ?? 0;
+  }
+  return 0;
+}
+
+/**
+ * Takes stock out, atomically, and refuses to go below zero.
+ *
+ * The guard is the `WHERE inventory_quantity >= qty` clause, not a read
+ * followed by a write: two customers buying the last item at the same instant
+ * must not both succeed, and only a conditional update inside the caller's
+ * transaction can promise that. If any line would oversell, nothing is taken
+ * and the caller's transaction is expected to roll back -- an order is placed
+ * whole or not at all.
+ *
+ * Returns the ids that could not be satisfied, empty on success.
+ */
+export async function reserveStock(db: Database, lines: readonly StockLine[]): Promise<string[]> {
+  const storeId = requireTenantId();
+  const unavailable: string[] = [];
+
+  /*
+   * Grouped by what the stock is drawn from, because two lines of the same
+   * variant or product must be taken in one go: taking them one at a time
+   * would let the second fail after the first succeeded, leaving stock gone
+   * with no order to show for it.
+   */
+  const variants = new Map<string, number>();
+  const simple = new Map<string, number>();
+  for (const line of lines) {
+    const quantity = Math.max(0, Math.trunc(line.quantity));
+    if (quantity === 0) continue;
+    if (line.variantId) {
+      variants.set(line.variantId, (variants.get(line.variantId) ?? 0) + quantity);
+    } else if (line.productId) {
+      simple.set(line.productId, (simple.get(line.productId) ?? 0) + quantity);
+    }
+  }
+
+  for (const [variantId, quantity] of variants) {
+    const updated = await db
+      .update(productVariants)
+      .set({
+        inventoryQuantity: sql`${productVariants.inventoryQuantity} - ${quantity}`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(productVariants.id, variantId),
+          eq(productVariants.storeId, storeId),
+          sql`${productVariants.inventoryQuantity} >= ${quantity}`,
+        ),
+      )
+      .returning({ id: productVariants.id });
+    if (updated.length === 0) unavailable.push(variantId);
+  }
+
+  for (const [productId, quantity] of simple) {
+    const updated = await db
+      .update(products)
+      .set({
+        inventoryQuantity: sql`${products.inventoryQuantity} - ${quantity}`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(products.id, productId),
+          eq(products.storeId, storeId),
+          sql`${products.inventoryQuantity} >= ${quantity}`,
+        ),
+      )
+      .returning({ id: products.id });
+    if (updated.length === 0) unavailable.push(productId);
+  }
+
+  return unavailable;
+}
+
+/** Puts stock back -- a cancelled or refunded order must not destroy inventory. */
+export async function releaseStock(db: Database, lines: readonly StockLine[]): Promise<void> {
+  const storeId = requireTenantId();
+
+  const variants = new Map<string, number>();
+  const simple = new Map<string, number>();
+  for (const line of lines) {
+    const quantity = Math.max(0, Math.trunc(line.quantity));
+    if (quantity === 0) continue;
+    if (line.variantId) {
+      variants.set(line.variantId, (variants.get(line.variantId) ?? 0) + quantity);
+    } else if (line.productId) {
+      simple.set(line.productId, (simple.get(line.productId) ?? 0) + quantity);
+    }
+  }
+
+  for (const [variantId, quantity] of variants) {
+    await db
+      .update(productVariants)
+      .set({
+        inventoryQuantity: sql`${productVariants.inventoryQuantity} + ${quantity}`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(productVariants.id, variantId), eq(productVariants.storeId, storeId)));
+  }
+
+  for (const [productId, quantity] of simple) {
+    await db
+      .update(products)
+      .set({
+        inventoryQuantity: sql`${products.inventoryQuantity} + ${quantity}`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(products.id, productId), eq(products.storeId, storeId)));
+  }
+}
+
+/** The variants of a product, in the order the merchant arranged them. */
+export async function listVariants(db: Database, productId: string): Promise<ProductVariant[]> {
+  return db
+    .select()
+    .from(productVariants)
+    .where(
+      and(eq(productVariants.storeId, requireTenantId()), eq(productVariants.productId, productId)),
+    )
+    .orderBy(asc(productVariants.position), asc(productVariants.createdAt));
+}
+
+/**
+ * How many things have run out: variants at zero, plus products that carry
+ * their own stock and are at zero. A product with variants is not counted
+ * twice -- its availability is its variants' business.
+ */
+export async function countOutOfStock(db: Database): Promise<number> {
+  const storeId = requireTenantId();
+  const [variantRows] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(productVariants)
+    .where(
+      and(eq(productVariants.storeId, storeId), sql`${productVariants.inventoryQuantity} <= 0`),
+    );
+
+  const [withVariants] = await db
+    .select({ total: sql<number>`count(distinct ${productVariants.productId})::int` })
+    .from(productVariants)
+    .where(eq(productVariants.storeId, storeId));
+
+  const [productRows] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(products)
+    .where(
+      and(
+        eq(products.storeId, storeId),
+        sql`${products.inventoryQuantity} <= 0`,
+        sql`not exists (select 1 from ${productVariants} where ${productVariants.productId} = ${products.id})`,
+      ),
+    );
+
+  // `withVariants` is subtracted from nothing here and kept for readability:
+  // the two counts are disjoint by construction -- a product that has variants
+  // is excluded from the second query.
+  void withVariants;
+  return (variantRows?.total ?? 0) + (productRows?.total ?? 0);
 }
 
 export async function getProductByHandle(db: Database, handle: string): Promise<Product | null> {

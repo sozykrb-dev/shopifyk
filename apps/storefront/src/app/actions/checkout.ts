@@ -3,7 +3,7 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { money } from '@velnorix/core';
+import { InsufficientStockError, money } from '@velnorix/core';
 import { paymentRegistry } from '@velnorix/payments';
 import { priceCart, rejectionMessage, type PriceableLine } from '@velnorix/pricing';
 import {
@@ -232,6 +232,14 @@ export async function placeOrderAction(
       );
     }
   } catch (error) {
+    /*
+     * Stock ran out between filling the cart and paying. This is not a crash
+     * and not the customer's fault, so it comes back as a sentence they can
+     * act on -- not as a 500 and not as a silent failure.
+     */
+    if (error instanceof InsufficientStockError) {
+      return { error: 'نفد مخزون أحد المنتجات قبل إتمام الطلب. راجع السلة وحاول مرة أخرى.' };
+    }
     // Re-submitting hits the unique index on (store_id, cart_id): one cart can
     // only ever become one order.
     const message = error instanceof Error ? error.message : '';

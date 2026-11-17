@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { randomToken } from '@velnorix/core';
+import { InsufficientStockError, randomToken } from '@velnorix/core';
 import {
   addCartItem,
   claimGuestCart,
@@ -54,7 +54,9 @@ async function cartIdForCheckout(): Promise<string> {
   return cartId;
 }
 
-export async function addToCartAction(formData: FormData): Promise<void> {
+export type CartState = { error?: string; ok?: string };
+
+export async function addToCartAction(_prev: CartState, formData: FormData): Promise<CartState> {
   const productId = String(formData.get('productId') ?? '');
   const variantIdRaw = String(formData.get('variantId') ?? '');
   const variantId = variantIdRaw || null;
@@ -75,18 +77,32 @@ export async function addToCartAction(formData: FormData): Promise<void> {
       unitPriceMinor = variant.priceMinor;
     }
 
-    await addCartItem(db, {
-      cartId,
-      productId,
-      variantId,
-      quantity,
-      unitPriceMinor,
-      currency: variantId ? currency : product.currency,
-    });
+    try {
+      await addCartItem(db, {
+        cartId,
+        productId,
+        variantId,
+        quantity,
+        unitPriceMinor,
+        currency: variantId ? currency : product.currency,
+      });
+    } catch (error) {
+      /*
+       * Stock ran out between the page being rendered and the button being
+       * pressed. The product page already shows what is left, so this is a
+       * race rather than the normal path -- but it must come back as a
+       * sentence, not as a 500.
+       */
+      if (error instanceof InsufficientStockError) {
+        return { error: 'نفد مخزون هذا المنتج.' };
+      }
+      throw error;
+    }
   });
 
   revalidatePath('/cart');
   revalidatePath('/');
+  return { ok: 'تمت الإضافة إلى السلة.' };
 }
 
 export async function updateCartItemAction(formData: FormData): Promise<void> {

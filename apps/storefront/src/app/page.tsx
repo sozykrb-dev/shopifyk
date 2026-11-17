@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { Badge, Card, CardContent, EmptyState } from '@velnorix/ui';
+import { Badge, Button, Card, CardContent, EmptyState } from '@velnorix/ui';
 import { themeStyle } from '@/lib/theme.js';
-import { formatMoney, money } from '@velnorix/core';
-import { listProductImages, listProducts, withTenant } from '@velnorix/db';
+import { listProductImages, listProducts, withTenant, type Product } from '@velnorix/db';
+import { ProductCard } from '@/components/product-card.js';
 import { getStorefrontContext, resolveStoreWithSettings } from '@/lib/tenant.js';
 
 export const dynamic = 'force-dynamic';
@@ -56,7 +56,15 @@ export default async function StoreHomePage() {
             <p className="text-lg font-semibold tracking-tight">{store.name}</p>
             <p className="text-xs text-muted-foreground numeric">{context.host}</p>
           </div>
-          <Badge tone="primary">{settings?.themeKey ?? 'dawn'}</Badge>
+          <div className="flex items-center gap-3">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/products">كل المنتجات</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/cart">السلة</Link>
+            </Button>
+            <Badge tone="primary">{settings?.themeKey ?? 'dawn'}</Badge>
+          </div>
         </div>
       </header>
 
@@ -77,35 +85,11 @@ export default async function StoreHomePage() {
           <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {page.items.map((product) => (
               <li key={product.id}>
-                <Link href={`/products/${product.handle}`} className="block h-full">
-                  <Card className="h-full overflow-hidden transition-colors hover:border-primary/40">
-                    <div className="flex h-40 items-center justify-center bg-muted/60 text-3xl">
-                      {imagesFor[product.id] ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={imagesFor[product.id] ?? ''}
-                          alt={product.titleAr}
-                          className="size-full object-cover"
-                        />
-                      ) : (
-                        '📦'
-                      )}
-                    </div>
-                    <CardContent className="space-y-1 p-4">
-                      <p className="truncate text-sm font-medium">{product.titleAr}</p>
-                      <p className="truncate text-xs text-muted-foreground">{product.titleEn}</p>
-                      <p className="numeric pt-1 text-sm font-semibold">
-                        {formatMoney(
-                          money(product.priceMinor, product.currency),
-                          locale === 'ar' ? 'ar-EG-u-nu-latn' : 'en-US',
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground numeric">
-                        المخزون: {product.inventoryQuantity}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </Link>
+                <ProductCard
+                  product={product as Product}
+                  imageUrl={imagesFor[product.id] ?? null}
+                  locale={locale}
+                />
               </li>
             ))}
           </ul>

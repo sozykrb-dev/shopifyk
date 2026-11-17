@@ -86,6 +86,24 @@ export class TenantIsolationError extends AppError {
   }
 }
 
+/**
+ * Raised when an order would take more stock than exists.
+ *
+ * Deliberately a 409 rather than a 400: the request was well-formed, it
+ * conflicts with the state of the world. Checkout shows it as "this item just
+ * sold out" rather than as a validation failure, because that is what it is.
+ */
+export class InsufficientStockError extends AppError {
+  public readonly variantIds: readonly string[];
+
+  constructor(variantIds: readonly string[]) {
+    super('insufficient_stock', 'One or more items do not have enough stock.', 409, {
+      variantIds: [...variantIds],
+    });
+    this.variantIds = [...variantIds];
+  }
+}
+
 /** Maps unknown throwables to an AppError so no internals leak to clients. */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;

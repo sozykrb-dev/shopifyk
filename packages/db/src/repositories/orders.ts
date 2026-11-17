@@ -1,8 +1,9 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { money } from '@velnorix/core';
-import { buildPage, type Money, type Page } from '@velnorix/core';
+import { buildPage, InsufficientStockError, type Money, type Page } from '@velnorix/core';
 import type { Database } from '../client.js';
 import { requireTenantId } from '../tenant-context.js';
+import { reserveStock } from './products.js';
 import {
   carts,
   orderItems,
@@ -165,6 +166,27 @@ export async function placeOrder(
       currency: input.currency,
     }));
     await tx.insert(orderItems).values(itemValues);
+
+    /*
+     * Stock is taken here, inside the order's own transaction, so an order
+     * that cannot be fulfilled cannot be placed at all. Reserving before the
+     * insert would let a payment failure leave stock gone with no order to
+     * show for it; reserving after the commit would let two customers buy the
+     * last item at once.
+     */
+    const oversold = await reserveStock(
+      tx,
+      lines.map((line) => ({
+        productId: line.productId,
+        variantId: line.variantId,
+        quantity: line.quantity,
+      })),
+    );
+    if (oversold.length > 0) {
+      // Throwing rolls the whole transaction back: no order, no items, no
+      // spent cart, and no stock taken.
+      throw new InsufficientStockError(oversold);
+    }
 
     // The cart is spent. Leaving it active would let the same cart be checked
     // out again (or show stale lines on the next page load).

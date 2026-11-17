@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Button, Label } from '@velnorix/ui';
-import { addToCartAction } from '@/app/actions/cart.js';
+import { Alert, Button, Label } from '@velnorix/ui';
+import { addToCartAction, type CartState } from '@/app/actions/cart.js';
 
 function SubmitButton({ disabled }: { disabled: boolean }) {
   const { pending } = useFormStatus();
@@ -31,9 +31,13 @@ export function AddToCartForm({
 }) {
   const [variantId, setVariantId] = useState(variants[0]?.id ?? '');
   const [quantity, setQuantity] = useState(1);
+  const [state, formAction] = useActionState<CartState, FormData>(addToCartAction, {});
 
   return (
-    <form action={addToCartAction} className="space-y-3">
+    <form action={formAction} className="space-y-3">
+      {state.error ? <Alert tone="danger" title={state.error} /> : null}
+      {state.ok ? <Alert tone="success" title={state.ok} /> : null}
+
       <input type="hidden" name="productId" value={productId} />
       {variantId ? <input type="hidden" name="variantId" value={variantId} /> : null}
 
