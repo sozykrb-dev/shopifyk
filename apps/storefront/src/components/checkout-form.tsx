@@ -144,13 +144,26 @@ export function CheckoutForm({
       </fieldset>
 
       <div className="space-y-2">
+        <Label htmlFor="couponCode">كوبون خصم (اختياري)</Label>
+        <Input
+          id="couponCode"
+          name="couponCode"
+          autoComplete="off"
+          placeholder="WELCOME10"
+          dir="ltr"
+          className="numeric"
+        />
+        <FieldHint>يُتحقَّق من الكوبون عند تأكيد الطلب. إذا لم يكن صالحًا سنخبرك قبل الخصم.</FieldHint>
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="notes">ملاحظات على الطلب (اختياري)</Label>
         <Textarea id="notes" name="notes" rows={3} placeholder="موعد التوصيل، تعليمات خاصة…" />
       </div>
 
       <SubmitButton total={total} />
       <p className="text-xs text-muted-foreground">
-        بالضغط على «تأكيد الطلب» يتم إنشاء الطلب والدفع عند الاستلام.
+        بالضغط على «تأكيد الطلب» يتم احتساب الشحن والضريبة من عنوانك، ثم إنشاء الطلب.
       </p>
     </form>
   );

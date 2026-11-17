@@ -117,6 +117,39 @@ A guest cart is keyed by a random cookie token; only its SHA-256 is stored. On
 sign-in the guest cart is **claimed** by the customer rather than merged, so a
 half-filled basket is never silently dropped.
 
+### Pricing
+
+Tax, shipping and coupons are **data, not code**. A merchant changes what they
+charge on the **التسعير** page of their store console; the engine that applies
+the rules (`packages/pricing`) is a pure function over those rows, and is never
+redeployed to change a price.
+
+Four rules are enforced in the engine and pinned by tests:
+
+1. **The server prices the order.** The browser posts an address and a coupon
+   code — never a total. A total that arrives in a form field is a total a
+   customer can edit.
+2. **The receipt always adds up.** Discounts and tax are _allocated_ across
+   lines with the largest-remainder method, so the lines sum to the order total
+   down to the last piastre. Rounding each line independently is how a receipt
+   stops adding up.
+3. **Free shipping is judged before the discount.** Otherwise a coupon could
+   push an order under the threshold and cost the customer more than the coupon
+   saved.
+4. **Tax-inclusive is the default**, because Egypt displays it that way: when a
+   shelf price already contains VAT the tax is _extracted_ from it, not added
+   on top (`extractTax` in `core/money`).
+
+A store that has configured nothing charges **no tax and no shipping**. The
+default rate is zero, never an invented one — ADR 0007 deferred tax as a
+business decision, and the absence of a decision must not become a 14% charge
+the merchant never agreed to.
+
+Usage caps are **counted from redemption rows**, not from a counter on the
+coupon, so a limit can never drift from the redemptions it is limiting. A
+coupon that does not apply stops the order with an Arabic reason rather than
+silently charging full price.
+
 ### Payments
 
 One gateway interface, several adapters: cash on delivery, manual bank

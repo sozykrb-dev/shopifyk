@@ -64,6 +64,13 @@
       "when": 1794895246412,
       "tag": "0008_subscriptions_and_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794896620381,
+      "tag": "0009_pricing_rules",
+      "breakpoints": true
     }
   ]
 }

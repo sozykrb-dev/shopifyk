@@ -89,6 +89,44 @@ export default async function OrderConfirmationPage({
 
           <Separator />
 
+          {/*
+           * The breakdown is stored on the order, not recomputed: what the
+           * customer is shown here is exactly what the pricing engine decided
+           * at checkout, even if the tax rate changes tomorrow.
+           */}
+          <dl className="space-y-1.5 text-sm">
+            <div className="flex items-center justify-between">
+              <dt className="text-muted-foreground">المجموع الفرعي</dt>
+              <dd className="numeric">
+                {formatMoney({ amount: order.subtotalMinor, currency: order.currency }, locale)}
+              </dd>
+            </div>
+            {order.discountMinor > 0 ? (
+              <div className="flex items-center justify-between">
+                <dt className="text-muted-foreground">الخصم</dt>
+                <dd className="numeric text-success">
+                  −{formatMoney({ amount: order.discountMinor, currency: order.currency }, locale)}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between">
+              <dt className="text-muted-foreground">الشحن</dt>
+              <dd className="numeric">
+                {formatMoney({ amount: order.shippingMinor, currency: order.currency }, locale)}
+              </dd>
+            </div>
+            {order.taxMinor > 0 ? (
+              <div className="flex items-center justify-between">
+                <dt className="text-muted-foreground">الضريبة</dt>
+                <dd className="numeric">
+                  {formatMoney({ amount: order.taxMinor, currency: order.currency }, locale)}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+
+          <Separator />
+
           <div className="flex items-center justify-between text-base font-semibold">
             <span>الإجمالي</span>
             <span className="numeric">{formatMoney(total, locale)}</span>

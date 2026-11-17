@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { money } from '@velnorix/core';
 import { paymentRegistry } from '@velnorix/payments';
+import { priceCart, rejectionMessage, type PriceableLine } from '@velnorix/pricing';
 import {
   createPaymentIntent,
   setPaymentIntentStatus,
@@ -12,6 +13,8 @@ import {
   getOrCreateCustomerCart,
   getOrCreateGuestCart,
   placeOrder,
+  pricingInputs,
+  redeemCoupon,
   withTenant,
 } from '@velnorix/db';
 import { CART_COOKIE, LAST_ORDER_COOKIE } from '@/lib/session.js';
@@ -79,6 +82,50 @@ export async function placeOrderAction(
   const { lines } = await withTenant(store.id, (db) => getCart(db, cart));
   if (lines.length === 0) return { error: 'السلة فارغة.' };
 
+  const countryCode = clean(formData.get('countryCode')) || 'EG';
+  const region = clean(formData.get('region')) || null;
+  const couponCode = clean(formData.get('couponCode'));
+
+  /*
+   * The order is priced here, on the server, from the cart rows and the
+   * store's own rules -- not from anything the browser posted. A total that
+   * arrives in a form field is a total a customer can edit, so the form sends
+   * an address and a coupon code and nothing else.
+   */
+  const quote = await withTenant(store.id, async (db) => {
+    const inputs = await pricingInputs(db, {
+      storeId: store.id,
+      code: couponCode || null,
+      email,
+    });
+    return {
+      quote: priceCart({
+        lines: lines.map<PriceableLine>((line) => ({
+          id: line.id,
+          unitAmount: money(line.unitPriceMinor, cart.currency),
+          quantity: line.quantity,
+        })),
+        currency: cart.currency,
+        destination: { countryCode, region, city },
+        taxRules: inputs.taxRules,
+        shippingRates: inputs.shippingRates,
+        coupon: inputs.coupon,
+      }),
+      couponRowId: inputs.couponRow?.id ?? null,
+    };
+  });
+
+  /*
+   * A coupon that does not apply stops the order rather than quietly charging
+   * full price. Silently ignoring it is how a customer discovers at the door
+   * that the discount they came for was never honoured.
+   */
+  const outcome = quote.quote.coupon;
+  if (couponCode && outcome && !outcome.accepted && outcome.rejection) {
+    return { error: rejectionMessage(outcome.rejection) };
+  }
+  if (couponCode && !outcome) return { error: rejectionMessage('not_found') };
+
   const paymentMethod = clean(formData.get('paymentMethod')) || 'cash_on_delivery';
   const registry = paymentRegistry();
   const gateway = registry.require(paymentMethod);
@@ -103,7 +150,15 @@ export async function placeOrderAction(
           countryCode: clean(formData.get('countryCode')) || 'EG',
           notes: clean(formData.get('notes')) || null,
           paymentMethod: gateway.provider,
-          shippingMinor: 0,
+          shippingMinor: quote.quote.shippingAmount.amount,
+          discountMinor: quote.quote.discount.amount,
+          taxMinor: quote.quote.tax.amount,
+          /*
+           * The engine has already priced this order, inclusive or exclusive
+           * of tax. Recomputing the total here would disagree with it -- most
+           * visibly when a shelf price already contains VAT.
+           */
+          totalMinor: quote.quote.total.amount,
         },
         lines.map((line) => ({
           productId: line.productId,
@@ -153,6 +208,26 @@ export async function placeOrderAction(
       await withTenant(store.id, (db) =>
         setPaymentIntentStatus(db, intent.id, payment.status, {
           providerReference: payment.providerReference,
+        }),
+      );
+    }
+
+    /*
+     * The redemption is written after the order exists, and is idempotent by
+     * (coupon, order): a usage cap counted from these rows cannot be spent
+     * twice by replaying checkout.
+     */
+    if (quote.couponRowId && quote.quote.discount.amount > 0) {
+      await withTenant(store.id, (db) =>
+        redeemCoupon(db, {
+          storeId: store.id,
+          couponId: quote.couponRowId!,
+          orderId,
+          email,
+          amount: {
+            amount: quote.quote.discount.amount,
+            currency: cart.currency,
+          },
         }),
       );
     }

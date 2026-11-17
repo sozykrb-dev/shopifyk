@@ -805,6 +805,186 @@ export const invoices = pgTable(
   ],
 );
 
+/*
+ * Pricing rules: tax, shipping and coupons.
+ *
+ * Everything here is **data, not code**. A merchant changes what they charge
+ * by editing a row; the engine in `packages/pricing` is a pure function over
+ * these rows and is never redeployed to change a price. ADR 0007 deferred tax
+ * handling as "a decision, not a guess" -- this is how that is honoured: the
+ * decision is a row a human reviews, and the default is deliberately a zero
+ * rate, so a store that has configured nothing charges no tax rather than an
+ * invented one.
+ *
+ * All three are tenant tables: RLS is enabled in the same migration that
+ * creates them (0009).
+ */
+
+/** Whether a coupon takes a percentage or a fixed amount off. */
+export const couponTypeEnum = pgEnum('coupon_type', ['percent', 'fixed']);
+
+export const taxRules = pgTable(
+  'tax_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+
+    nameAr: text('name_ar').notNull(),
+    nameEn: text('name_en').notNull(),
+
+    /** Integer basis points: 1400 = 14%. Never a percentage, never a float. */
+    rateBps: integer('rate_bps').notNull().default(0),
+
+    /** ISO country code, or '*' for any country. */
+    countryCode: text('country_code').notNull().default('*'),
+    /** Optional governorate filter; null matches any region. */
+    region: text('region'),
+
+    /**
+     * Tax-inclusive: the shelf price already contains the tax, so it is
+     * extracted rather than added. Egypt displays prices inclusive of VAT.
+     */
+    priceInclusive: boolean('price_inclusive').notNull().default(true),
+    taxesShipping: boolean('taxes_shipping').notNull().default(false),
+    /** Higher priority wins when several rules match one destination. */
+    priority: integer('priority').notNull().default(0),
+    active: boolean('active').notNull().default(true),
+
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('tax_rules_store_idx').on(table.storeId),
+    index('tax_rules_match_idx').on(table.storeId, table.countryCode, table.region),
+  ],
+);
+
+export const shippingRates = pgTable(
+  'shipping_rates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+
+    nameAr: text('name_ar').notNull(),
+    nameEn: text('name_en').notNull(),
+
+    amountMinor: moneyMinorUnits('amount_minor').default(0),
+    currency: currencyCode('currency'),
+
+    countryCode: text('country_code').notNull().default('*'),
+    region: text('region'),
+    city: text('city'),
+
+    /**
+     * Orders at or above this subtotal ship free. Compared against the
+     * pre-discount subtotal, so a coupon can never cost a customer their free
+     * shipping. Null disables the threshold.
+     */
+    freeAboveMinor: integer('free_above_minor'),
+    minDays: integer('min_days'),
+    maxDays: integer('max_days'),
+
+    priority: integer('priority').notNull().default(0),
+    active: boolean('active').notNull().default(true),
+
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('shipping_rates_store_idx').on(table.storeId),
+    index('shipping_rates_match_idx').on(table.storeId, table.countryCode, table.region),
+  ],
+);
+
+export const coupons = pgTable(
+  'coupons',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+
+    /**
+     * Stored upper-cased and trimmed, and unique per store. A coupon code is
+     * typed by a human, so comparison must be forgiving at the edge and exact
+     * in the database.
+     */
+    code: text('code').notNull(),
+
+    type: couponTypeEnum('type').notNull().default('percent'),
+    /** Percent: basis points off. Fixed: minor units off. */
+    value: integer('value').notNull().default(0),
+    currency: currencyCode('currency'),
+
+    minSubtotalMinor: moneyMinorUnits('min_subtotal_minor').default(0),
+
+    startsAt: timestamp('starts_at', { withTimezone: true, mode: 'date' }),
+    endsAt: timestamp('ends_at', { withTimezone: true, mode: 'date' }),
+
+    usageLimit: integer('usage_limit'),
+    perCustomerLimit: integer('per_customer_limit'),
+    appliesToShipping: boolean('applies_to_shipping').notNull().default(false),
+    active: boolean('active').notNull().default(true),
+
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('coupons_store_code_key').on(table.storeId, table.code),
+    index('coupons_store_idx').on(table.storeId),
+  ],
+);
+
+/**
+ * One row per redemption.
+ *
+ * Counting redemptions rather than incrementing a counter on the coupon keeps
+ * the cap honest: the count is derived from rows that also say *who* redeemed
+ * it, so a per-customer limit needs no second source of truth, and a support
+ * agent can answer "who used this?" without a log dig.
+ */
+export const couponRedemptions = pgTable(
+  'coupon_redemptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    couponId: uuid('coupon_id')
+      .notNull()
+      .references(() => coupons.id, { onDelete: 'cascade' }),
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
+
+    /** Lower-cased email, for the per-customer cap. Null for guest checkouts. */
+    emailNormalized: text('email_normalized'),
+    amountMinor: moneyMinorUnits('amount_minor').default(0),
+    currency: currencyCode('currency'),
+
+    redeemedAt: timestamp('redeemed_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // One redemption per order per coupon: replaying checkout cannot double-count.
+    uniqueIndex('coupon_redemptions_order_key').on(table.couponId, table.orderId),
+    index('coupon_redemptions_coupon_idx').on(table.storeId, table.couponId),
+    index('coupon_redemptions_email_idx').on(table.couponId, table.emailNormalized),
+  ],
+);
+
+export type TaxRuleRow = typeof taxRules.$inferSelect;
+export type NewTaxRuleRow = typeof taxRules.$inferInsert;
+export type ShippingRateRow = typeof shippingRates.$inferSelect;
+export type NewShippingRateRow = typeof shippingRates.$inferInsert;
+export type CouponRow = typeof coupons.$inferSelect;
+export type NewCouponRow = typeof coupons.$inferInsert;
+export type CouponRedemptionRow = typeof couponRedemptions.$inferSelect;
+export type NewCouponRedemptionRow = typeof couponRedemptions.$inferInsert;
+
 export const paymentIntents = pgTable(
   'payment_intents',
   {

@@ -10,6 +10,9 @@ import {
   findRoleByKey,
   findStoreBySlug,
   findUserByEmail,
+  createCoupon,
+  createShippingRate,
+  createTaxRule,
   issueInvoice,
   markInvoicePaid,
   markEmailVerified,
@@ -503,6 +506,67 @@ async function seedBilling(
   });
 }
 
+/**
+ * Demo pricing rules.
+ *
+ * These are **configuration, not invented truth**. Egyptian VAT is 14% and is
+ * displayed inclusive of the shelf price, which is why the rule is written
+ * `priceInclusive`: the tax is extracted from the price, not added to it. The
+ * shipping numbers and the coupon are plainly demo values, and the seed says so
+ * in its output.
+ *
+ * A store that configured none of this would charge no tax and no shipping --
+ * the engine's default is a zero rate, never a guess.
+ */
+async function seedPricing(storeId: string, currency: string): Promise<void> {
+  await withPlatformTenant(storeId, async (db) => {
+    await createTaxRule(db, {
+      storeId,
+      nameAr: 'ضريبة القيمة المضافة (14%)',
+      nameEn: 'VAT (14%)',
+      rateBps: 1_400,
+      countryCode: 'EG',
+      priceInclusive: true,
+      taxesShipping: false,
+    });
+
+    await createShippingRate(db, {
+      storeId,
+      nameAr: 'شحن عادي',
+      nameEn: 'Standard',
+      amountMinor: 3_000,
+      currency,
+      countryCode: 'EG',
+      freeAboveMinor: 100_000,
+      minDays: 2,
+      maxDays: 5,
+    });
+
+    await createShippingRate(db, {
+      storeId,
+      nameAr: 'شحن سريع',
+      nameEn: 'Express',
+      amountMinor: 7_000,
+      currency,
+      countryCode: 'EG',
+      minDays: 1,
+      maxDays: 2,
+      priority: 10,
+    });
+
+    await createCoupon(db, {
+      storeId,
+      code: 'WELCOME10',
+      type: 'percent',
+      value: 1_000,
+      currency,
+      minSubtotalMinor: 20_000,
+      usageLimit: 100,
+      perCustomerLimit: 1,
+    });
+  });
+}
+
 /** Enrols the demo super admin in TOTP with a seed we can print a code for. */
 async function enrollDemoTotp(userId: string, accountLabel: string): Promise<string> {
   await withPlatform(async (db) => {
@@ -567,6 +631,10 @@ async function main(): Promise<void> {
   /* Two demo stores with catalogues ---------------------------------------- */
   const cairo = await seedStore(STORES[0]!, plan.id);
   const zad = await seedStore(STORES[1]!, plan.id);
+
+  /* Pricing rules for both stores ----------------------------------------- */
+  await seedPricing(cairo.id, cairo.currency);
+  await seedPricing(zad.id, zad.currency);
 
   /* Subscriptions and invoices for both stores ----------------------------- */
   await seedBilling(cairo.id, plan.id, {

@@ -47,6 +47,15 @@ export type PlaceOrderInput = {
   shippingMinor?: number;
   discountMinor?: number;
   taxMinor?: number;
+  /**
+   * The total as the pricing engine computed it.
+   *
+   * When a shelf price already contains VAT, the total is *not* subtotal +
+   * tax + shipping - discount, because the tax is inside the price. Callers
+   * that have run `packages/pricing` pass its answer rather than asking this
+   * function to add the columns up a second time.
+   */
+  totalMinor?: number;
 };
 
 export type OrderLineSnapshot = {
@@ -106,7 +115,10 @@ export async function placeOrder(
       (total, line) => total + line.unitPriceMinor * line.quantity,
       0,
     );
-    const totalMinor = Math.max(0, subtotalMinor + shippingMinor + taxMinor - discountMinor);
+    const totalMinor =
+      input.totalMinor !== undefined
+        ? Math.max(0, Math.trunc(input.totalMinor))
+        : Math.max(0, subtotalMinor + shippingMinor + taxMinor - discountMinor);
 
     const values: NewOrder = {
       storeId,

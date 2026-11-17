@@ -239,6 +239,33 @@ export function applyRate(
 }
 
 /**
+ * The tax contained in a **tax-inclusive** amount.
+ *
+ * When a shelf price already includes VAT, the tax is not `gross * rate` —
+ * that overcharges, because the rate applies to the net, not to the gross.
+ * The net is `gross * 10000 / (10000 + rate)`, and the tax is the difference.
+ *
+ * Rounding is applied to the *net*, and the tax takes the remainder, so the
+ * two always add back up to the gross exactly. Computing each independently
+ * is how a receipt ends up one piastre out.
+ */
+export function extractTax(
+  value: Money,
+  basisPoints: number,
+  mode: RoundingMode = 'half-up',
+): Money {
+  if (!Number.isInteger(basisPoints)) {
+    throw new ValidationError('Rates must be expressed as integer basis points.');
+  }
+  if (basisPoints < 0) throw new ValidationError('Tax rates cannot be negative.');
+  const gross = BigInt(value.amount);
+  const scaled = gross * 10_000n;
+  const divisor = 10_000n + BigInt(basisPoints);
+  const net = divideRound(scaled, divisor, mode);
+  return money(assertSafeInteger(gross - net, value.currency), value.currency);
+}
+
+/**
  * Splits money across `weights` without losing a single minor unit
  * (largest-remainder method). Leftover minor units go to the first shares.
  */

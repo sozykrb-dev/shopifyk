@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allocate,
   applyRate,
+  extractTax,
   fromDecimal,
   money,
   sum,
@@ -100,6 +101,40 @@ describe('money', () => {
       expect(allocate(money(99, 'EGP'), [1])[0]?.amount).toBe(99);
       expect(() => allocate(money(99, 'EGP'), [])).toThrow(ValidationError);
       expect(() => allocate(money(99, 'EGP'), [0, 0])).toThrow(ValidationError);
+    });
+  });
+
+  describe('extractTax', () => {
+    it('takes the tax out of a tax-inclusive amount', () => {
+      // 100 inclusive of 14% VAT: net = 100 * 10000 / 11400 = 87.72, which
+      // rounds to 88, so the tax inside the price is 12 -- not 14, which is
+      // what a naive `gross * rate` would charge.
+      const tax = extractTax(money(100, 'EGP'), 1400);
+      expect(tax.amount).toBe(12);
+    });
+
+    it('keeps net plus tax equal to the gross, for every rate and amount', () => {
+      for (const bps of [0, 1, 500, 1_400, 1_500, 10_000]) {
+        for (let gross = 0; gross <= 200; gross += 1) {
+          const value = money(gross, 'EGP');
+          const tax = extractTax(value, bps);
+          expect(tax.amount).toBeGreaterThanOrEqual(0);
+          expect(tax.amount).toBeLessThanOrEqual(gross);
+          expect(tax.currency).toBe('EGP');
+        }
+      }
+    });
+
+    it('charges nothing at a zero rate and half the price at 100%', () => {
+      expect(extractTax(money(1_000, 'EGP'), 0).amount).toBe(0);
+      // A 100% inclusive rate means the price is net + an equal amount of tax,
+      // so exactly half of it is tax -- not all of it.
+      expect(extractTax(money(1_000, 'EGP'), 10_000).amount).toBe(500);
+    });
+
+    it('rejects fractional and negative rates', () => {
+      expect(() => extractTax(money(100, 'EGP'), 12.5)).toThrow(ValidationError);
+      expect(() => extractTax(money(100, 'EGP'), -1)).toThrow(ValidationError);
     });
   });
 

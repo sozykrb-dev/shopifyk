@@ -31,6 +31,7 @@ const nextConfig: NextConfig = {
     '@velnorix/db',
     '@velnorix/auth',
     '@velnorix/payments',
+    '@velnorix/pricing',
   ],
   poweredByHeader: false,
   allowedDevOrigins: [...previewOrigins, '*.e2b.app', '*.e2b.dev', 'localhost'],

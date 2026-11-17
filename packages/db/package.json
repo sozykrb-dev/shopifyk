@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@velnorix/core": "workspace:*",
+    "@velnorix/pricing": "workspace:*",
     "drizzle-orm": "^0.45.0",
     "postgres": "^3.4.5",
     "zod": "^3.24.1"

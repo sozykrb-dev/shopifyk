@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { formatMoney } from '@velnorix/core';
+import { formatMoney, money } from '@velnorix/core';
 import { Button, Card, CardContent, Separator } from '@velnorix/ui';
 import { paymentRegistry } from '@velnorix/payments';
+import { priceCart, type PriceableLine } from '@velnorix/pricing';
+import { pricingInputs, withTenant } from '@velnorix/db';
 import { currentCart } from '@/lib/cart.js';
 import { resolveStorefront } from '@/lib/store-context.js';
 import { CheckoutForm } from '@/components/checkout-form.js';
@@ -13,8 +15,10 @@ export const metadata = { title: 'إتمام الشراء' };
 /**
  * Checkout.
  *
- * Shipping and taxes are still zero: pricing rules belong to a later phase and
- * inventing them here would put invented numbers on a real order.
+ * The summary shows an **estimate**, priced from the store's own rules for the
+ * country, because the address that decides the shipping zone has not been
+ * typed yet. The number the customer is actually charged is computed again on
+ * submit, from the address they gave -- this one is a preview, and says so.
  */
 export default async function CheckoutPage() {
   const resolved = await resolveStorefront();
@@ -30,6 +34,21 @@ export default async function CheckoutPage() {
   // Nothing to buy: send the shopper back rather than show a dead form.
   if (cart.lines.length === 0) redirect('/cart');
 
+  const estimate = await withTenant(store.id, async (db) => {
+    const inputs = await pricingInputs(db, { storeId: store.id });
+    return priceCart({
+      lines: cart.lines.map<PriceableLine>((line) => ({
+        id: line.id,
+        unitAmount: money(line.unitPriceMinor, cart.subtotal.currency),
+        quantity: line.quantity,
+      })),
+      currency: cart.subtotal.currency,
+      destination: { countryCode: 'EG' },
+      taxRules: inputs.taxRules,
+      shippingRates: inputs.shippingRates,
+    });
+  });
+
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">إتمام الشراء</h1>
@@ -41,7 +60,7 @@ export default async function CheckoutPage() {
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_20rem]">
         <CheckoutForm
           defaultEmail={resolved.customer?.email ?? ''}
-          total={formatMoney(cart.subtotal, locale)}
+          total={formatMoney(estimate.total, locale)}
           locale={locale}
           methods={paymentRegistry()
             .list()
@@ -75,16 +94,39 @@ export default async function CheckoutPage() {
               ))}
             </ul>
             <Separator />
+            {estimate.discount.amount > 0 ? (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">الخصم</span>
+                <span className="numeric text-success">
+                  −{formatMoney(estimate.discount, locale)}
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">الشحن</span>
-              <span className="numeric">{formatMoney({ amount: 0, currency }, locale)}</span>
+              <span className="text-muted-foreground">
+                الشحن{estimate.shipping?.freeShippingApplied ? ' (مجاني)' : ''}
+              </span>
+              <span className="numeric">{formatMoney(estimate.shippingAmount, locale)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                الضريبة
+                {estimate.appliedTaxRule?.priceInclusive ? ' (ضمن السعر)' : ''}
+              </span>
+              <span className="numeric">{formatMoney(estimate.tax, locale)}</span>
             </div>
             <div className="flex items-center justify-between text-base font-semibold">
               <span>الإجمالي</span>
-              <span className="numeric">{formatMoney(cart.subtotal, locale)}</span>
+              <span className="numeric">{formatMoney(estimate.total, locale)}</span>
             </div>
+            {estimate.shipping ? (
+              <p className="text-xs text-muted-foreground">
+                التوصيل خلال {estimate.shipping.minDays ?? '?'}–{estimate.shipping.maxDays ?? '؟'}{' '}
+                أيام تقريبًا.
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
-              الأسعار بالـ{currency}. الضرائب وقواعد الشحن تأتي في مرحلة التسعير.
+              الأسعار بالـ{currency}. هذه الأرقام تقديرية وتُحتسب نهائيًا بعد إدخال عنوان الشحن.
             </p>
           </CardContent>
         </Card>
