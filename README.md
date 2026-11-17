@@ -137,6 +137,22 @@ The cart is capped by the stock that backs it, so a customer is not sent to
 checkout with 99 of something the store has three of. A sold-out product
 disables its own add-to-cart button rather than failing at the till.
 
+### Store settings
+
+The storefront has always rendered from `store_settings` — theme, colour,
+locale and currency are read on every page. What was missing was the other
+half: somewhere for the merchant to set them. `/settings` in the store console
+is that half, gated on `store:settings.write`.
+
+The name and defaults are written to `stores`, the appearance to
+`store_settings`, both inside one transaction: a half-applied save would leave
+a store whose name changed but whose language did not, which a merchant
+reports as "the site is broken".
+
+The colour is validated as a six-digit hex, and the logo as an `https://` or
+root-relative URL. Neither is cosmetic — both are injected into the rendered
+page, so an unvalidated value is stored XSS dressed up as branding.
+
 ### Catalogue
 
 `/products` is the store's catalogue: server-rendered, with search and

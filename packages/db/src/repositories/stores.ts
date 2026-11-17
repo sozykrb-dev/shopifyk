@@ -168,6 +168,27 @@ export async function restoreStore(db: Database, storeId: string): Promise<Store
   return updated;
 }
 
+/**
+ * Updates a store's own row from inside its tenant scope.
+ *
+ * The `storeId === tenant` check is not belt-and-braces: the platform console
+ * can call this from `withPlatformTenant` to rename a store it manages, and
+ * without the check a typo would edit a different store's row.
+ */
+export async function updateStore(
+  db: Database,
+  storeId: string,
+  patch: Partial<Pick<Store, 'name' | 'defaultCurrency' | 'defaultLocale' | 'timezone'>>,
+): Promise<Store> {
+  const [updated] = await db
+    .update(stores)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(stores.id, storeId))
+    .returning();
+  if (!updated) throw new Error(`Store ${storeId} not found.`);
+  return updated;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Tenant scoped: store settings                                               */
 /* -------------------------------------------------------------------------- */

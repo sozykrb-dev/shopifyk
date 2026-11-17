@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Package,
   Receipt,
+  Settings,
   Tags,
   ScrollText,
   ShoppingBag,
@@ -42,6 +43,7 @@ const STORE_NAV: readonly NavItem[] = [
   { href: '/orders', label: 'الطلبات', icon: ShoppingBag },
   { href: '/products', label: 'المنتجات', icon: Package },
   { href: '/pricing', label: 'التسعير', icon: Tags },
+  { href: '/settings', label: 'الإعدادات', icon: Settings },
 ];
 
 export function isStoreContext(context: Principal['context']): boolean {
