@@ -35,12 +35,28 @@ export async function getStorefrontContext(): Promise<StorefrontContext> {
   };
 }
 
+/**
+ * A store to open when the host maps to nothing (local dev, preview
+ * deployments): without a wildcard domain there is no subdomain to resolve.
+ * Dev only -- it never runs in production, and never overrides a real host.
+ */
+function devFallbackTenant(): string | null {
+  if (process.env.NODE_ENV === 'production') return null;
+  if (process.env.ALLOW_DEV_TENANT_OVERRIDE !== 'true') return null;
+  return process.env.DEV_FALLBACK_TENANT || null;
+}
+
 export async function resolveStore(context: StorefrontContext): Promise<Store | null> {
   if (context.kind !== 'store') return null;
 
   return withPlatform(async (db) => {
     if (context.devTenant) return findStoreBySlug(db, context.devTenant);
-    return findStoreByHost(db, context.host || context.storeSlug || '');
+
+    const byHost = await findStoreByHost(db, context.host || context.storeSlug || '');
+    if (byHost) return byHost;
+
+    const fallback = devFallbackTenant();
+    return fallback ? findStoreBySlug(db, fallback) : null;
   });
 }
 

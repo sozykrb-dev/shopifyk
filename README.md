@@ -80,6 +80,10 @@ http://localhost:3000/?__tenant=cairo-sneakers     # that store's admin
 The override is remembered in a cookie and stripped from the URL on the first
 redirect, so links and analytics stay clean.
 
+If the host matches no store at all (a local or preview URL), the storefront
+opens `DEV_FALLBACK_TENANT` instead of a dead end — also development only,
+never in production, and never in place of a real host that resolved.
+
 ---
 
 ## Demo accounts
