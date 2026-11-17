@@ -96,6 +96,13 @@ export default async function StoreHomePage() {
   );
 }
 
+/** Only rendered outside production, and only when the override is enabled. */
+function devTenantHint(): string | null {
+  if (process.env.NODE_ENV === 'production') return null;
+  if (process.env.ALLOW_DEV_TENANT_OVERRIDE !== 'true') return null;
+  return 'cairo-sneakers';
+}
+
 function StoreUnavailable({
   host,
   storeName,
@@ -118,6 +125,12 @@ function StoreUnavailable({
               ? 'يرجى التواصل مع صاحب المتجر أو مع دعم المنصة.'
               : 'تحقّق من عنوان المتجر، أو أنشئ متجرك على Velnorix.'}
           </p>
+          {!suspended && devTenantHint() ? (
+            <p className="text-sm text-muted-foreground">
+              في بيئة التطوير يمكنك تحديد المتجر بـ{' '}
+              <code className="numeric">?__tenant={devTenantHint()}</code> في الرابط.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </main>
