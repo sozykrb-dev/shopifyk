@@ -1,5 +1,6 @@
 import {
   Activity,
+  Contact,
   LayoutDashboard,
   Package,
   Receipt,
@@ -42,6 +43,7 @@ const PLATFORM_NAV: readonly NavItem[] = [
 const STORE_NAV: readonly NavItem[] = [
   OVERVIEW,
   { href: '/orders', label: 'الطلبات', icon: ShoppingBag },
+  { href: '/customers', label: 'العملاء', icon: Contact },
   { href: '/products', label: 'المنتجات', icon: Package },
   { href: '/pricing', label: 'التسعير', icon: Tags },
   { href: '/staff', label: 'فريق العمل', icon: Users },

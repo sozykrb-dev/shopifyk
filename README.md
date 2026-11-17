@@ -217,6 +217,29 @@ does **not** read it off the plan. Callers pass `plan.trialDays`, as the seed
 does. Forgetting to is a silent downgrade — the store skips its trial and is
 billed from day one, and nothing errors.
 
+### Customers
+
+`/customers` answers "who bought from me", and it is built from orders first
+with accounts joined on afterwards.
+
+That ordering is the whole point. The obvious implementation — list the
+registered users — quietly hides every guest checkout, and guest checkout is
+how most first orders happen. On the seeded Cairo store the difference is not
+marginal: six customers, of whom **five never registered**. A
+registered-users-only list would report one, and the merchant would conclude
+the store is failing while it is converting fine.
+
+Grouping is by lowercased email, because that is the only identifier a guest
+order carries. Someone who checks out as a guest and later registers is one
+customer with two orders, not two customers.
+
+One bug worth recording, because the type system did not catch it: an
+aggregate like `max(placed_at)` comes back from the driver as a **string**,
+not a `Date`. Annotating it `sql<Date | null>` compiles cleanly and then fails
+at render time on `toLocaleDateString`. The query now casts to text and parses
+explicitly, and a test asserts `lastOrderAt instanceof Date` so it cannot
+quietly regress. Tests alone did not catch this — loading the page did.
+
 ### Catalogue
 
 `/products` is the store's catalogue: server-rendered, with search and

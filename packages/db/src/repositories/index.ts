@@ -10,3 +10,4 @@ export * from './pricing.js';
 export * from './billing.js';
 export * from './rbac.js';
 export * from './audit.js';
+export * from './customers.js';
