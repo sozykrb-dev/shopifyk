@@ -22,6 +22,20 @@
       "when": 1794880137822,
       "tag": "0002_reference_data",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794889133620,
+      "tag": "0003_catalog_and_cart",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794890290170,
+      "tag": "0004_cart_line_indexes",
+      "breakpoints": true
     }
   ]
 }

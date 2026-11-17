@@ -86,6 +86,39 @@ never in production, and never in place of a real host that resolved.
 
 ---
 
+## What the storefront does
+
+The storefront is the customer-facing app on port 3001. Pages:
+
+| Route                | What it is                                       |
+| -------------------- | ------------------------------------------------ |
+| `/`                  | Product grid (published products only)           |
+| `/products/[handle]` | Product page: gallery, variants, add to cart     |
+| `/cart`              | Lines, quantity update, subtotal                 |
+| `/account/register`  | Create a customer account for **this** store     |
+| `/account/login`     | Sign in as a customer                            |
+| `/account/verify`    | Confirm an email address with the one-time token |
+| `/account`           | The signed-in customer's home                    |
+
+Three rules the storefront keeps:
+
+- **The store comes from the `Host` header, never from the client.** Every
+  Server Action re-resolves it with `requireStorefront()`; a `storeId` posted by
+  a browser is ignored.
+- **Prices come from the database, never from the form.** The action re-reads
+  the product (or variant) inside `withTenant(store.id)` before writing a line.
+- **Registration never reveals whether an address exists.** "New customer" and
+  "already registered" return the same screen; the verification token is only
+  issued for a brand-new account. In development the token is shown on screen,
+  since there is no mail server — in production it is emailed and never leaves
+  the server.
+
+A guest cart is keyed by a random cookie token; only its SHA-256 is stored. On
+sign-in the guest cart is **claimed** by the customer rather than merged, so a
+half-filled basket is never silently dropped.
+
+---
+
 ## Demo accounts
 
 `pnpm db:seed` prints this table; the password is `SEED_PASSWORD` from `.env`

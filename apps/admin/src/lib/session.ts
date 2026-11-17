@@ -2,15 +2,16 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
   cookieNameFor,
+  cookieNameForHost,
   hasConfirmedTotp,
   loadPrincipal,
   resolveSession,
+  sessionAllowedOnHost,
   sessionPolicy,
   sessionRequiresMfa,
   type Principal,
 } from '@velnorix/auth';
 import { withPlatform } from '@velnorix/db';
-import { cookieNameForHost, sessionAllowedOnHost } from './auth-context.js';
 import { getRequestContext, resolveStoreId, type RequestContext } from './tenant.js';
 import { TENANT_HEADERS } from './tenant-headers.js';
 

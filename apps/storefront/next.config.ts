@@ -23,8 +23,9 @@ const previewOrigins = (process.env.ALLOWED_DEV_ORIGINS ?? '')
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  serverExternalPackages: ['postgres', 'pino', 'pino-pretty'],
-  transpilePackages: ['@velnorix/ui', '@velnorix/core', '@velnorix/db'],
+  // Native/platform packages must stay outside the server bundle.
+  serverExternalPackages: ['postgres', '@node-rs/argon2', 'pino', 'pino-pretty'],
+  transpilePackages: ['@velnorix/ui', '@velnorix/core', '@velnorix/db', '@velnorix/auth'],
   poweredByHeader: false,
   allowedDevOrigins: [...previewOrigins, '*.e2b.app', '*.e2b.dev', 'localhost'],
   images: {
@@ -32,7 +33,19 @@ const nextConfig: NextConfig = {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],
     formats: ['image/avif', 'image/webp'],
   },
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
+    // Native and platform packages must stay `require()`d at runtime instead of
+    // being traced into the bundle (a `.node` binary cannot be webpacked).
+    if (isServer) {
+      config.externals = [
+        ...(Array.isArray(config.externals) ? config.externals : [config.externals]),
+        '@node-rs/argon2',
+        'postgres',
+        'pino',
+        'pino-pretty',
+      ];
+    }
+
     // The workspace packages are consumed as TypeScript source and import each
     // other with ESM `.js` specifiers (what `tsc` emits for `./button` in
     // `./button.tsx`). Teach webpack the same mapping, per-file.

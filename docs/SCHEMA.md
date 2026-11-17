@@ -67,15 +67,28 @@ UNIQUE (store_id, lower(btrim(email))) WHERE context = 'customer'
 
 Every one of these has `FORCE ROW LEVEL SECURITY` and a policy on `store_id`.
 
-| Table            | Purpose                                             |
-| ---------------- | --------------------------------------------------- |
-| `products`       | Catalogue (title/description in Arabic and English) |
-| `store_settings` | Theme, accent colour, locale, currency, logo        |
+| Table              | Purpose                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| `products`         | Catalogue (title/description in Arabic and English)         |
+| `product_images`   | Gallery, ordered by `position`; `position = 0` is the cover |
+| `product_variants` | Size/colour options, each with its own price and stock      |
+| `carts`            | One active cart per guest token **or** per customer         |
+| `cart_items`       | Lines, with the unit price captured at add-to-cart time     |
+| `store_settings`   | Theme, accent colour, locale, currency, logo                |
 
-Later phases add `orders`, `customers`, `collections`, `discounts` and
-`inventory_movements` on the same pattern: `store_id NOT NULL`, a composite
-index **leading with** `store_id`, and RLS enabled in the same migration that
-creates the table.
+Later phases add `orders`, `order_items`, `customers`, `addresses`,
+`collections`, `discounts` and `inventory_movements` on the same pattern:
+`store_id NOT NULL`, a composite index **leading with** `store_id`, and RLS
+enabled in the same migration that creates the table.
+
+Two details worth knowing before changing the cart:
+
+- **Only `sha256(guest_token)` is stored.** A database leak cannot be replayed
+  to take over somebody's cart.
+- **`cart_items` has two partial unique indexes**, one for lines with no variant
+  and one for lines with a variant. A single `(cart_id, product_id, variant_id)`
+  index would not do: Postgres treats `NULL`s as distinct, so adding the same
+  product twice would create two lines instead of bumping the quantity.
 
 ## How isolation works at runtime
 
@@ -116,6 +129,7 @@ amounts in different currencies. New stores default to `EGP`.
 | Enum             | Values                                                                          |
 | ---------------- | ------------------------------------------------------------------------------- |
 | `auth_context`   | `super_admin`, `platform_staff`, `merchant_owner`, `merchant_staff`, `customer` |
+| `cart_status`    | `active`, `converted`, `abandoned`                                              |
 | `account_status` | `pending_verification`, `active`, `disabled`                                    |
 | `store_status`   | `active`, `suspended`, `closed`                                                 |
 | `role_scope`     | `platform`, `store`                                                             |

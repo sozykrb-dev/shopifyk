@@ -445,6 +445,133 @@ export const storeSettings = pgTable('store_settings', {
   updatedAt,
 });
 
+/**
+ * Product images. Tenant table: RLS is enabled in migration 0003 in the same
+ * commit that creates it.
+ */
+export const productImages = pgTable(
+  'product_images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    altEn: text('alt_en'),
+    altAr: text('alt_ar'),
+    position: integer('position').notNull().default(0),
+    createdAt,
+  },
+  (table) => [
+    index('product_images_product_idx').on(table.storeId, table.productId, table.position),
+  ],
+);
+
+/**
+ * Product variants (size, colour, ...).
+ *
+ * A product with no variants is sold as-is; a product with variants takes its
+ * price and stock from the variant the shopper picks.
+ */
+export const productVariants = pgTable(
+  'product_variants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    titleEn: text('title_en').notNull(),
+    titleAr: text('title_ar').notNull(),
+    sku: text('sku'),
+    priceMinor: moneyMinorUnits('price_minor').default(0),
+    currency: currencyCode('currency'),
+    inventoryQuantity: integer('inventory_quantity').notNull().default(0),
+    position: integer('position').notNull().default(0),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('product_variants_product_sku_key').on(table.storeId, table.productId, table.sku),
+    index('product_variants_product_idx').on(table.storeId, table.productId, table.position),
+  ],
+);
+
+/**
+ * Shopping carts.
+ *
+ * A cart belongs to a signed-in customer (`customer_user_id`) or to a guest
+ * browser (`guest_token_hash` -- only the hash is stored, so a leaked database
+ * cannot take over someone's cart). Signing in claims the guest cart instead of
+ * merging two carts, which keeps the rules simple and predictable.
+ */
+export const cartStatusEnum = pgEnum('cart_status', ['active', 'converted', 'abandoned']);
+
+export const carts = pgTable(
+  'carts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    customerUserId: uuid('customer_user_id').references(() => users.id, { onDelete: 'cascade' }),
+    guestTokenHash: text('guest_token_hash'),
+    currency: currencyCode('currency'),
+    status: cartStatusEnum('status').notNull().default('active'),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('carts_guest_token_key').on(table.storeId, table.guestTokenHash),
+    index('carts_customer_idx').on(table.storeId, table.customerUserId),
+  ],
+);
+
+export const cartItems = pgTable(
+  'cart_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    cartId: uuid('cart_id')
+      .notNull()
+      .references(() => carts.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'cascade' }),
+    quantity: integer('quantity').notNull().default(1),
+    /** Price captured at add-to-cart time: a later price change must not edit a cart silently. */
+    unitPriceMinor: moneyMinorUnits('unit_price_minor').default(0),
+    currency: currencyCode('currency'),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    /*
+     * One line per (cart, product, variant): adding the same thing bumps the
+     * quantity instead of adding a second line.
+     *
+     * Split into two partial indexes because Postgres treats NULLs as distinct
+     * in a unique index, so a plain `(cart_id, product_id, variant_id)` index
+     * would let "the same product with no variant" pile up into many lines.
+     */
+    uniqueIndex('cart_items_cart_line_key')
+      .on(table.cartId, table.productId)
+      .where(sql`${table.variantId} IS NULL`),
+    uniqueIndex('cart_items_cart_variant_line_key')
+      .on(table.cartId, table.productId, table.variantId)
+      .where(sql`${table.variantId} IS NOT NULL`),
+    index('cart_items_cart_idx').on(table.storeId, table.cartId),
+  ],
+);
+
 export const products = pgTable(
   'products',
   {
@@ -495,6 +622,14 @@ export type StoreSettings = typeof storeSettings.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
 export type StoreDomain = typeof storeDomains.$inferSelect;
+export type ProductImage = typeof productImages.$inferSelect;
+export type NewProductImage = typeof productImages.$inferInsert;
+export type ProductVariant = typeof productVariants.$inferSelect;
+export type NewProductVariant = typeof productVariants.$inferInsert;
+export type Cart = typeof carts.$inferSelect;
+export type NewCart = typeof carts.$inferInsert;
+export type CartItem = typeof cartItems.$inferSelect;
+export type NewCartItem = typeof cartItems.$inferInsert;
 
 export const schema = {
   plans,

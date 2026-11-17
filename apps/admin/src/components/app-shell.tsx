@@ -1,53 +1,12 @@
 import Link from 'next/link';
-import {
-  Activity,
-  LayoutDashboard,
-  LogOut,
-  Package,
-  ScrollText,
-  ShieldCheck,
-  Store,
-} from 'lucide-react';
+import { LogOut, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback, Badge, Button, Separator } from '@velnorix/ui';
 import { signOutAction } from '@/app/actions/auth.js';
 import { DirectionToggle, ThemeToggle } from '@/components/theme-controls.js';
+import { initials, roleLabel, visibleNavItems } from '@/lib/nav.js';
 import type { Principal } from '@velnorix/auth';
 
-export type NavItem = {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-};
-
-const PLATFORM_NAV: NavItem[] = [
-  { href: '/', label: 'نظرة عامة', icon: LayoutDashboard },
-  { href: '/stores', label: 'المتاجر', icon: Store },
-  { href: '/audit', label: 'سجل التدقيق', icon: ScrollText },
-  { href: '/system', label: 'صحة النظام', icon: Activity },
-];
-
-const STORE_NAV: NavItem[] = [
-  { href: '/', label: 'نظرة عامة', icon: LayoutDashboard },
-  { href: '/products', label: 'المنتجات', icon: Package },
-];
-
-const ROLE_LABELS: Record<Principal['context'], string> = {
-  super_admin: 'مالك المنصة',
-  platform_staff: 'موظف منصة',
-  merchant_owner: 'مالك المتجر',
-  merchant_staff: 'موظف متجر',
-  customer: 'عميل',
-};
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0] ?? '')
-    .join('')
-    .toUpperCase();
-}
+export type { NavItem } from '@/lib/nav.js';
 
 /**
  * Admin shell: dense but calm.
@@ -67,10 +26,7 @@ export function AppShell({
   activePath: string;
   children: React.ReactNode;
 }) {
-  const nav =
-    principal.context === 'merchant_owner' || principal.context === 'merchant_staff'
-      ? STORE_NAV
-      : PLATFORM_NAV;
+  const nav = visibleNavItems(principal.context);
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_1fr]">
@@ -110,7 +66,7 @@ export function AppShell({
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{principal.fullName}</p>
               <p className="truncate text-xs text-muted-foreground">
-                {ROLE_LABELS[principal.context]}
+                {roleLabel(principal.context)}
               </p>
             </div>
           </div>

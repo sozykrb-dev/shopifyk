@@ -4,11 +4,14 @@ import {
   sha256Hex,
   type Result,
   type RateLimiter,
+  type ActionError,
 } from '@velnorix/core';
 import {
+  createUser,
   findMembership,
   findUserByEmail,
   isAccountLocked,
+  markEmailVerified,
   recordAudit,
   recordFailedLogin,
   recordSuccessfulLogin,
@@ -21,8 +24,10 @@ import {
   type User,
 } from '@velnorix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { err, ok } from '@velnorix/core';
 import { authEnv } from './env.js';
-import { dummyVerify, verifyPassword } from './password.js';
+import { checkPasswordStrength, dummyVerify, hashPassword, verifyPassword } from './password.js';
+import { createEmailVerificationToken, consumeEmailVerificationToken } from './tokens.js';
 import {
   decryptTotpSecret,
   encryptTotpSecret,
@@ -80,6 +85,129 @@ export type LoginOutcome = LoginSuccess | LoginFailure;
  * is created with `mfaCompletedAt = null`, which grants no access until the
  * second factor is verified.
  */
+/**
+ * Registers a customer for one store.
+ *
+ * Customers are per store by design: the same email in two stores is two
+ * accounts, because a store owns its customer list. A platform or merchant
+ * account can never be created here -- `context` is not a parameter.
+ *
+ * The account starts `pending_verification` and a single-use verification token
+ * is returned so the caller can email it. Signing in stays blocked until the
+ * email is confirmed, and registration never reveals whether an address is
+ * already taken: the caller shows the same "check your inbox" screen either
+ * way and only sends a token when the account is really new.
+ */
+export type RegisterCustomerInput = {
+  storeId: string;
+  email: string;
+  password: string;
+  fullName: string;
+  locale?: string;
+};
+
+export type RegisterCustomerResult = {
+  email: string;
+  /** Present only for a brand-new account; null when the address already exists. */
+  verificationToken: string | null;
+};
+
+export async function registerCustomer(
+  db: Database,
+  input: RegisterCustomerInput,
+): Promise<Result<RegisterCustomerResult, ActionError>> {
+  const email = input.email.trim();
+  const fullName = input.fullName.trim();
+
+  if (!email || !fullName) {
+    return err({ code: 'invalid_input', message: 'الاسم والبريد الإلكتروني مطلوبان.' });
+  }
+
+  const strength = checkPasswordStrength(input.password);
+  if (!strength.valid) {
+    return err({
+      code: 'weak_password',
+      message: `كلمة المرور يجب أن تحتوي على: ${strength.problems.join('، ')}.`,
+    });
+  }
+
+  const existing = await findUserByEmail(db, email, 'customer', input.storeId);
+  if (existing) {
+    // Do not create anything, do not send anything: this is exactly the
+    // response an attacker probing for addresses must not be able to tell apart.
+    await recordAudit(db, {
+      actorType: 'anonymous',
+      action: 'auth.register.duplicate',
+      storeId: input.storeId,
+      metadata: { email: email.toLowerCase() },
+    });
+    return ok({ email, verificationToken: null });
+  }
+
+  const passwordHash = await hashPassword(input.password);
+
+  let user: User;
+  try {
+    user = await createUser(db, {
+      email,
+      context: 'customer',
+      storeId: input.storeId,
+      fullName,
+      passwordHash,
+      preferredLocale: input.locale ?? 'ar',
+    });
+  } catch (error) {
+    // The unique index is the real guard against a race between the check
+    // above and this insert; treat it as "already registered".
+    if (error instanceof Error && error.message.includes('duplicate key')) {
+      return ok({ email, verificationToken: null });
+    }
+    throw error;
+  }
+
+  const verificationToken = await createEmailVerificationToken(db, {
+    userId: user.id,
+    email: user.email,
+  });
+
+  await recordAudit(db, {
+    actorType: 'user',
+    actorUserId: user.id,
+    actorContext: 'customer',
+    storeId: input.storeId,
+    action: 'auth.register',
+    targetType: 'user',
+    targetId: user.id,
+  });
+
+  return ok({ email, verificationToken });
+}
+
+/** Confirms an email address with the token from the verification email. */
+export async function verifyCustomerEmail(
+  db: Database,
+  token: string,
+): Promise<Result<{ email: string }, ActionError>> {
+  const consumed = await consumeEmailVerificationToken(db, token);
+  if (!consumed) {
+    return err({
+      code: 'invalid_token',
+      message: 'رابط التأكيد غير صالح أو منتهي الصلاحية.',
+    });
+  }
+
+  await markEmailVerified(db, consumed.userId);
+  await recordAudit(db, {
+    actorType: 'user',
+    actorUserId: consumed.userId,
+    action: 'auth.email_verified',
+    targetType: 'user',
+    targetId: consumed.userId,
+  });
+
+  return ok({ email: consumed.email });
+}
+
 export async function authenticate(
   db: Database,
   input: LoginInput,

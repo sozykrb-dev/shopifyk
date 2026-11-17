@@ -1,7 +1,8 @@
+import Link from 'next/link';
 import { Badge, Card, CardContent, EmptyState } from '@velnorix/ui';
 import { themeStyle } from '@/lib/theme.js';
 import { formatMoney, money } from '@velnorix/core';
-import { listProducts, withTenant } from '@velnorix/db';
+import { listProductImages, listProducts, withTenant } from '@velnorix/db';
 import { getStorefrontContext, resolveStoreWithSettings } from '@/lib/tenant.js';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,17 @@ export default async function StoreHomePage() {
   const page = await withTenant(store.id, (db) =>
     listProducts(db, { limit: 12, status: 'active' }),
   );
+
+  // One extra query for the whole grid instead of one per card.
+  const imagesFor = await withTenant(store.id, async (db) => {
+    const entries = await Promise.all(
+      page.items.map(async (product) => {
+        const [first] = await listProductImages(db, product.id);
+        return [product.id, first?.url ?? null] as const;
+      }),
+    );
+    return Object.fromEntries(entries) as Record<string, string | null>;
+  });
   const locale = settings?.locale ?? store.defaultLocale;
 
   return (
@@ -65,24 +77,35 @@ export default async function StoreHomePage() {
           <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {page.items.map((product) => (
               <li key={product.id}>
-                <Card className="h-full overflow-hidden">
-                  <div className="flex h-40 items-center justify-center bg-muted/60 text-3xl">
-                    📦
-                  </div>
-                  <CardContent className="space-y-1 p-4">
-                    <p className="truncate text-sm font-medium">{product.titleAr}</p>
-                    <p className="truncate text-xs text-muted-foreground">{product.titleEn}</p>
-                    <p className="numeric pt-1 text-sm font-semibold">
-                      {formatMoney(
-                        money(product.priceMinor, product.currency),
-                        locale === 'ar' ? 'ar-EG-u-nu-latn' : 'en-US',
+                <Link href={`/products/${product.handle}`} className="block h-full">
+                  <Card className="h-full overflow-hidden transition-colors hover:border-primary/40">
+                    <div className="flex h-40 items-center justify-center bg-muted/60 text-3xl">
+                      {imagesFor[product.id] ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={imagesFor[product.id] ?? ''}
+                          alt={product.titleAr}
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        '📦'
                       )}
-                    </p>
-                    <p className="text-xs text-muted-foreground numeric">
-                      المخزون: {product.inventoryQuantity}
-                    </p>
-                  </CardContent>
-                </Card>
+                    </div>
+                    <CardContent className="space-y-1 p-4">
+                      <p className="truncate text-sm font-medium">{product.titleAr}</p>
+                      <p className="truncate text-xs text-muted-foreground">{product.titleEn}</p>
+                      <p className="numeric pt-1 text-sm font-semibold">
+                        {formatMoney(
+                          money(product.priceMinor, product.currency),
+                          locale === 'ar' ? 'ar-EG-u-nu-latn' : 'en-US',
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground numeric">
+                        المخزون: {product.inventoryQuantity}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
               </li>
             ))}
           </ul>

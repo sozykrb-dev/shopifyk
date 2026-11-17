@@ -11,6 +11,19 @@ import { TENANT_HEADERS } from './lib/tenant-headers.js';
  */
 
 const DEV_TENANT_COOKIE = 'vx_dev_tenant_storefront';
+const CART_COOKIE = 'vx_cart';
+
+/**
+ * A fresh guest cart token, minted on the edge.
+ *
+ * `node:crypto` is not available in the edge runtime, so this uses Web Crypto.
+ * The value is meaningless on its own: only its SHA-256 is ever stored.
+ */
+function newCartToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
@@ -47,6 +60,18 @@ export function middleware(request: NextRequest): NextResponse {
     url.search !== request.nextUrl.search
       ? NextResponse.redirect(url)
       : NextResponse.next({ request: { headers: requestHeaders } });
+
+  // Every visitor gets a cart token, so the first product page already has a
+  // real cart row to write into.
+  if (!request.cookies.has(CART_COOKIE)) {
+    response.cookies.set(CART_COOKIE, newCartToken(), {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    });
+  }
 
   if (classification.devTenant) {
     response.cookies.set(DEV_TENANT_COOKIE, classification.devTenant, {

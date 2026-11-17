@@ -3,7 +3,7 @@ import {
   cookieNameForHost,
   sessionAllowedOnHost,
   signInContextForHost,
-} from '../src/lib/auth-context.js';
+} from '../src/host-context.js';
 
 describe('signInContextForHost', () => {
   it('signs super admins in on the platform console', () => {

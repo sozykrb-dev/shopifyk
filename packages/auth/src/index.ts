@@ -34,6 +34,9 @@ export {
   createPasswordResetToken,
 } from './tokens.js';
 
+export { cookieNameForHost, sessionAllowedOnHost, signInContextForHost } from './host-context.js';
+export type { HostKind } from './host-context.js';
+
 export {
   SESSION_COOKIES,
   completeSessionMfa,
@@ -68,6 +71,13 @@ export {
   disableTotp,
   hasConfirmedTotp,
   loginRateLimiter,
+  registerCustomer,
+  verifyCustomerEmail,
   verifySecondFactor,
 } from './service.js';
-export type { LoginInput, LoginOutcome } from './service.js';
+export type {
+  LoginInput,
+  LoginOutcome,
+  RegisterCustomerInput,
+  RegisterCustomerResult,
+} from './service.js';

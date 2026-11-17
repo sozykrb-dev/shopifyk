@@ -1,14 +1,15 @@
-import { cookieNameFor } from '@velnorix/auth';
 import type { SessionContext } from '@velnorix/db';
+import { cookieNameFor } from './session/index.js';
 
 /**
- * Pure mapping between the host a request arrived on and the authentication
- * context that may sign in there.
+ * Pure mapping between the kind of host a request arrived on and the
+ * authentication context that may sign in there.
  *
  * The platform has five authentication contexts and they must never bleed into
- * each other: a merchant session presented to the platform console (or the
- * other way round) is not a session at all. Keeping the mapping in one pure
- * module is what makes that rule testable.
+ * each other: a merchant session presented to the platform console -- or a
+ * store session replayed against another store -- is not a session at all.
+ * Keeping the mapping in one pure module, shared by every app, is what makes
+ * that rule testable instead of implied.
  */
 
 export type HostKind = 'platform' | 'store' | 'unknown';
