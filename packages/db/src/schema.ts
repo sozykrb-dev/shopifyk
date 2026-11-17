@@ -102,8 +102,10 @@ export const plans = pgTable(
     interval: planIntervalEnum('interval').notNull().default('monthly'),
     trialDays: integer('trial_days').notNull().default(14),
     /**
-     * Configurable per-plan platform fee in basis points (250 = 2.5%).
-     * 0 by design: the business model can be decided after talking to merchants.
+     * Platform fee in basis points (250 = 2.5%). The column default is 0 so a
+     * plan is never accidentally created with a fee; the values the platform
+     * actually charges live in migration 0002 and are business decisions, not
+     * code. Confirm them before launch.
      */
     transactionFeeBps: integer('transaction_fee_bps').notNull().default(0),
     limits: jsonb('limits').$type<PlanLimits>().notNull(),

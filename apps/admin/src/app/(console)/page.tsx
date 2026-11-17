@@ -66,7 +66,7 @@ async function PlatformDashboard() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">نظرة عامة على المنصة</h1>
         <p className="text-sm text-muted-foreground">
-          أرقام حقيقية من قاعدة البيانات، بدون بيانات تجريبية.
+          أرقام حقيقية من قاعدة البيانات، بدون أي قيم مزروعة في الكود.
         </p>
       </div>
 

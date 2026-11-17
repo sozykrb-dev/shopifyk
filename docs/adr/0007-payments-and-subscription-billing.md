@@ -27,9 +27,11 @@ revisited:
 - Money as integer minor units + currency (ADR 0006).
 - `plans` with `price_minor`, `currency`, `interval`, `trial_days`,
   `transaction_fee_bps` and a JSONB `limits`.
-- `transaction_fee_bps` defaults to **0**: the platform's take is a business
-  decision, and encoding a guessed number in the database would be a guess
-  about money. The column exists so the decision is a config change.
+- The **column** `transaction_fee_bps` defaults to 0 so a plan can never be
+  created with a fee by accident. Migration `0002_reference_data.sql` seeds
+  four plans (trial / starter / growth / scale) with prices and fees —
+  **those seeded numbers are placeholders awaiting a business decision**, not
+  approved pricing.
 - An append-only `audit_logs` table, which is where every payment event will be
   recorded.
 
@@ -58,17 +60,24 @@ These are decisions, not intentions:
   and the manual-invoice fallback is modelled as an invoice with an off-platform
   payment reference rather than as an exception.
 
-### Deliberately deferred
+### Deliberately deferred (needs a decision, not a guess)
 
-- Which plan prices to charge (`plans.price_minor` is seeded at 0).
-- Whether the platform takes a transaction fee (`transaction_fee_bps = 0`).
+- Which plan prices to charge. `plans.price_minor` is seeded with EGP values
+  (299 / 899 / 1,999) purely so the billing screens have something to render.
+- What the platform takes per transaction. `transaction_fee_bps` is seeded
+  with 250 / 150 / 100 bps (2.5% / 1.5% / 1.0%), same caveat.
 - Payout timing to merchants.
 - Tax handling.
+
+These are recorded as **data** precisely so that changing them is a
+configuration change reviewed by a human — not a deploy, and never a guess
+made by the build.
 
 ## Consequences
 
 - Phase 0 can be reviewed without a single payment credential.
 - Adding a gateway later is an adapter plus a migration for its columns — no
   change to checkout, orders, or the admin UI's shape.
-- Because pricing is zeroed rather than guessed, nothing in Phase 0's seed data
-  can be mistaken for a real price.
+- Because pricing is data rather than code, changing it is reviewable in one
+  migration diff. Until it is reviewed, the seeded numbers are placeholders and
+  must not be treated as approved pricing.
