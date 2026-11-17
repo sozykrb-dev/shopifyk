@@ -2,6 +2,7 @@ import {
   Activity,
   LayoutDashboard,
   Package,
+  Receipt,
   ScrollText,
   ShoppingBag,
   Store,
@@ -31,6 +32,7 @@ const PLATFORM_NAV: readonly NavItem[] = [
   OVERVIEW,
   { href: '/stores', label: 'المتاجر', icon: Store },
   { href: '/audit', label: 'سجل التدقيق', icon: ScrollText },
+  { href: '/billing', label: 'الفوترة', icon: Receipt },
   { href: '/system', label: 'صحة النظام', icon: Activity },
 ];
 

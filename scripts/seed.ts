@@ -10,16 +10,20 @@ import {
   findRoleByKey,
   findStoreBySlug,
   findUserByEmail,
+  issueInvoice,
+  markInvoicePaid,
   markEmailVerified,
   orderItems,
   orders,
   plans,
   products,
   recordAudit,
+  startSubscription,
   stores,
   totpCredentials,
   upsertStoreSettings,
   withPlatform,
+  withPlatformTenant,
   withTenant,
   type Store,
   type User,
@@ -443,6 +447,62 @@ async function seedOrders(
   return DEMO.length;
 }
 
+/**
+ * Demo subscriptions and invoices.
+ *
+ * Written inside `withPlatformTenant`, because billing rows are tenant data:
+ * the platform acts on a store's books from inside that store's scope, not by
+ * reading across every store at once.
+ *
+ * The amounts come from the plan rows rather than from literals, so the demo
+ * never contradicts the pricing that is actually configured.
+ */
+async function seedBilling(
+  storeId: string,
+  planId: string,
+  plan: { priceMinor: number; currency: string; nameAr: string; nameEn: string; trialDays: number },
+): Promise<void> {
+  await withPlatformTenant(storeId, async (db) => {
+    const subscription = await startSubscription(db, {
+      storeId,
+      planId,
+      trialDays: plan.trialDays,
+      provider: 'manual',
+    });
+
+    const line = {
+      descriptionAr: `اشتراك شهري — ${plan.nameAr}`,
+      descriptionEn: `Monthly subscription — ${plan.nameEn}`,
+      quantity: 1,
+      unitAmountMinor: plan.priceMinor,
+      totalMinor: plan.priceMinor,
+    };
+
+    // The current invoice is open; last month's is paid. Two states are enough
+    // to see that the screens distinguish them.
+    const current = await issueInvoice(db, {
+      storeId,
+      subscriptionId: subscription.id,
+      lines: [line],
+      currency: plan.currency,
+      dueInDays: 7,
+    });
+
+    const previous = await issueInvoice(db, {
+      storeId,
+      subscriptionId: subscription.id,
+      lines: [line],
+      currency: plan.currency,
+      dueInDays: -21,
+    });
+    await markInvoicePaid(db, previous.id, {
+      method: 'manual_transfer',
+      reference: 'SEED-DEMO-1',
+    });
+    void current;
+  });
+}
+
 /** Enrols the demo super admin in TOTP with a seed we can print a code for. */
 async function enrollDemoTotp(userId: string, accountLabel: string): Promise<string> {
   await withPlatform(async (db) => {
@@ -479,9 +539,8 @@ function currentTotpCode(): string {
 }
 
 async function main(): Promise<void> {
-  const [plan] = await withPlatform((db) =>
-    db.select({ id: plans.id }).from(plans).where(eq(plans.key, 'growth')),
-  );
+  // The full row: the billing seed needs the plan's price, name and trial.
+  const [plan] = await withPlatform((db) => db.select().from(plans).where(eq(plans.key, 'growth')));
   if (!plan) throw new Error('No "growth" plan found: run `pnpm db:migrate` first.');
 
   /* Platform team (super admin + staff) ------------------------------------ */
@@ -508,6 +567,28 @@ async function main(): Promise<void> {
   /* Two demo stores with catalogues ---------------------------------------- */
   const cairo = await seedStore(STORES[0]!, plan.id);
   const zad = await seedStore(STORES[1]!, plan.id);
+
+  /* Subscriptions and invoices for both stores ----------------------------- */
+  await seedBilling(cairo.id, plan.id, {
+    priceMinor: plan.priceMinor,
+    currency: plan.currency,
+    nameAr: plan.nameAr,
+    nameEn: plan.nameEn,
+    trialDays: plan.trialDays,
+  });
+
+  const [starterPlan] = await withPlatform((db) =>
+    db.select().from(plans).where(eq(plans.key, 'starter')),
+  );
+  if (starterPlan) {
+    await seedBilling(zad.id, starterPlan.id, {
+      priceMinor: starterPlan.priceMinor,
+      currency: starterPlan.currency,
+      nameAr: starterPlan.nameAr,
+      nameEn: starterPlan.nameEn,
+      trialDays: starterPlan.trialDays,
+    });
+  }
 
   /* Merchant owners and staff ---------------------------------------------- */
   const cairoOwner = await upsertUser({

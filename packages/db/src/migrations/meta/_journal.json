@@ -57,6 +57,13 @@
       "when": 1794894695305,
       "tag": "0007_payment_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794895246412,
+      "tag": "0008_subscriptions_and_invoices",
+      "breakpoints": true
     }
   ]
 }

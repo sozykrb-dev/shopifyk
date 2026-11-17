@@ -691,6 +691,120 @@ export const orders = pgTable(
  *   - **Every webhook is idempotent.** `payment_events.provider_event_id` is
  *     unique per provider, so a replay cannot apply the same payment twice.
  */
+/** One line on an invoice. Stored as JSON, so an old invoice never re-prices. */
+export type InvoiceLine = {
+  descriptionAr: string;
+  descriptionEn: string;
+  quantity: number;
+  unitAmountMinor: number;
+  totalMinor: number;
+};
+
+/*
+ * Subscriptions and invoices (merchant -> platform).
+ *
+ * A separate bounded context from checkout (ADR 0007): different tables,
+ * different webhooks, and the manual-invoice fallback is modelled as an invoice
+ * with an off-platform payment reference rather than as an exception.
+ *
+ * An invoice is a document, not a computation: once issued, its amount never
+ * changes, even if the plan price does the next day.
+ */
+export const subscriptionStatusEnum = pgEnum('subscription_status', [
+  'trialing',
+  'active',
+  'past_due',
+  'paused',
+  'cancelled',
+]);
+
+export const invoiceStatusEnum = pgEnum('invoice_status', [
+  'draft',
+  'open',
+  'paid',
+  'void',
+  'uncollectible',
+]);
+
+/**
+ * Subscriptions are platform-scoped: the platform bills merchants, so there is
+ * one row per store and the platform reads across all of them.
+ */
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    status: subscriptionStatusEnum('status').notNull().default('trialing'),
+    /** When the current period started, and when it is charged again. */
+    currentPeriodStart: timestamp('current_period_start', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    trialEndsAt: timestamp('trial_ends_at', { withTimezone: true, mode: 'date' }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'date' }),
+    /** Provider-agnostic: a Stripe subscription id, or null for manual billing. */
+    provider: text('provider'),
+    providerReference: text('provider_reference'),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    // One live subscription per store, however it is billed.
+    uniqueIndex('subscriptions_store_key').on(table.storeId),
+    index('subscriptions_plan_idx').on(table.planId),
+    index('subscriptions_period_end_idx').on(table.currentPeriodEnd),
+  ],
+);
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    subscriptionId: uuid('subscription_id').references(() => subscriptions.id, {
+      onDelete: 'set null',
+    }),
+    /** Per-store, human-facing, so a merchant can quote "فاتورة 12". */
+    invoiceNumber: integer('invoice_number').notNull(),
+    status: invoiceStatusEnum('status').notNull().default('open'),
+    currency: currencyCode('currency'),
+    /** Line items as a snapshot, so an invoice reads the same next year. */
+    lines: jsonb('lines').$type<InvoiceLine[]>().notNull().default([]),
+    subtotalMinor: moneyMinorUnits('subtotal_minor').default(0),
+    taxMinor: moneyMinorUnits('tax_minor').default(0),
+    totalMinor: moneyMinorUnits('total_minor').default(0),
+    /** Set when the invoice is issued; null while it is still a draft. */
+    issuedAt: timestamp('issued_at', { withTimezone: true, mode: 'date' }),
+    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }),
+    paidAt: timestamp('paid_at', { withTimezone: true, mode: 'date' }),
+    voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),
+    /*
+     * Manual billing is not an exception: it is an invoice whose payment
+     * happened off-platform, with a reference the finance team typed in.
+     */
+    paymentMethod: text('payment_method'),
+    paymentReference: text('payment_reference'),
+    notes: text('notes'),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('invoices_store_number_key').on(table.storeId, table.invoiceNumber),
+    index('invoices_store_status_idx').on(table.storeId, table.status),
+    index('invoices_due_idx').on(table.dueAt),
+  ],
+);
+
 export const paymentIntents = pgTable(
   'payment_intents',
   {
@@ -847,6 +961,10 @@ export type NewOrderItem = typeof orderItems.$inferInsert;
 export type PaymentIntent = typeof paymentIntents.$inferSelect;
 export type NewPaymentIntent = typeof paymentIntents.$inferInsert;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+export type Invoice = typeof invoices.$inferSelect;
+export type NewInvoice = typeof invoices.$inferInsert;
 export type NewPaymentEvent = typeof paymentEvents.$inferInsert;
 export type NewCartItem = typeof cartItems.$inferInsert;
 
