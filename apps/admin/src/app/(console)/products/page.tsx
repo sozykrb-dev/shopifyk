@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
-import { Search } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Search } from 'lucide-react';
 import { PERMISSION } from '@velnorix/auth';
 import { listProducts, withTenant } from '@velnorix/db';
 import { formatMoney, money } from '@velnorix/core';
 import {
+  Badge,
+  Button,
   Card,
   CardContent,
   EmptyState,
@@ -29,6 +32,10 @@ type SearchParams = Promise<{ cursor?: string; search?: string; status?: string 
  * The list is fetched inside `withTenant(storeId)`, so the query is pinned to
  * this store both by the data-access layer and by Postgres RLS. It also proves
  * the wiring end to end: seed data in, no other store's rows out.
+ *
+ * Creating and editing are separate permissions, so the "منتج جديد" button only
+ * appears for someone who can actually use it -- and the action behind it
+ * re-checks the same permission anyway.
  */
 export default async function ProductsPage({ searchParams }: { searchParams: SearchParams }) {
   const { principal, storeId } = await requirePrincipal(['merchant_owner', 'merchant_staff']);
@@ -42,6 +49,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
   if (!canRead) {
     return <EmptyState title="غير مسموح" description="حسابك لا يملك صلاحية عرض المنتجات." />;
   }
+  const canWrite = principal.permissions.has(PERMISSION.STORE_PRODUCTS_WRITE);
 
   const limit = 25;
   const page = await withTenant(storeId, (db) =>
@@ -55,11 +63,20 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">المنتجات</h1>
-        <p className="text-sm text-muted-foreground">
-          تعرض هذه الصفحة منتجات متجرك فقط. الإنشاء والتعديل يأتي في المرحلة التالية.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">المنتجات</h1>
+          <p className="text-sm text-muted-foreground">
+            تعرض هذه الصفحة منتجات متجرك فقط، ولا يمكن أن تظهر منتجات متجر آخر.
+          </p>
+        </div>
+        {canWrite ? (
+          <Button asChild size="sm">
+            <Link href="/products/new">
+              <Plus className="size-4" /> منتج جديد
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
       <Card>
@@ -100,7 +117,18 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
           {page.items.length === 0 ? (
             <EmptyState
               title="لا توجد منتجات"
-              description="ابدأ بإضافة منتجات من شاشة المنتجات في المرحلة القادمة."
+              description={
+                canWrite
+                  ? 'ابدأ بإنشاء أول منتج في متجرك.'
+                  : 'لا توجد منتجات بعد، وحسابك لا يملك صلاحية الإنشاء.'
+              }
+              action={
+                canWrite ? (
+                  <Button asChild size="sm">
+                    <Link href="/products/new">منتج جديد</Link>
+                  </Button>
+                ) : undefined
+              }
             />
           ) : (
             <Table>
@@ -117,11 +145,36 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
                 {page.items.map((product) => (
                   <TR key={product.id}>
                     <TD>
-                      <p className="font-medium">{product.titleAr}</p>
+                      {canWrite ? (
+                        <Link
+                          href={`/products/${product.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {product.titleAr}
+                        </Link>
+                      ) : (
+                        <p className="font-medium">{product.titleAr}</p>
+                      )}
                       <p className="text-xs text-muted-foreground">{product.titleEn}</p>
                     </TD>
                     <TD className="numeric text-muted-foreground">{product.sku ?? '—'}</TD>
-                    <TD className="text-muted-foreground">{product.status}</TD>
+                    <TD>
+                      <Badge
+                        tone={
+                          product.status === 'active'
+                            ? 'success'
+                            : product.status === 'draft'
+                              ? 'warning'
+                              : 'neutral'
+                        }
+                      >
+                        {product.status === 'active'
+                          ? 'منشور'
+                          : product.status === 'draft'
+                            ? 'مسودة'
+                            : 'مؤرشف'}
+                      </Badge>
+                    </TD>
                     <TD className="numeric">{product.inventoryQuantity}</TD>
                     <TD className="numeric font-medium">
                       {formatMoney(money(product.priceMinor, product.currency))}
