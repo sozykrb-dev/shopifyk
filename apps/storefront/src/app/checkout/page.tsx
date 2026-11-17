@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { formatMoney } from '@velnorix/core';
 import { Button, Card, CardContent, Separator } from '@velnorix/ui';
+import { paymentRegistry } from '@velnorix/payments';
 import { currentCart } from '@/lib/cart.js';
 import { resolveStorefront } from '@/lib/store-context.js';
 import { CheckoutForm } from '@/components/checkout-form.js';
@@ -33,13 +34,22 @@ export default async function CheckoutPage() {
     <main className="mx-auto max-w-4xl px-4 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">إتمام الشراء</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        الدفع عند الاستلام. بوابات الدفع الإلكتروني تُضاف لاحقًا.
+        اختر طريقة الدفع المناسبة لك. البطاقات والمحافظ تعمل في وضع الاختبار حتى يتم تفعيل بيانات
+        البوابة.
       </p>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_20rem]">
         <CheckoutForm
           defaultEmail={resolved.customer?.email ?? ''}
           total={formatMoney(cart.subtotal, locale)}
+          locale={locale}
+          methods={paymentRegistry()
+            .list()
+            .map((gateway) => ({
+              provider: gateway.provider,
+              labelAr: gateway.labelAr,
+              labelEn: gateway.labelEn,
+            }))}
         />
 
         <Card className="h-fit">

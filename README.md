@@ -117,6 +117,26 @@ A guest cart is keyed by a random cookie token; only its SHA-256 is stored. On
 sign-in the guest cart is **claimed** by the customer rather than merged, so a
 half-filled basket is never silently dropped.
 
+### Payments
+
+One gateway interface, several adapters: cash on delivery, manual bank
+transfer, Paymob (cards and wallets) and Fawry (pay at a kiosk). Checkout never
+branches on provider — it asks the registry which methods are configured and
+renders them.
+
+Three rules the webhook handler keeps, in this order:
+
+1. **Verify the signature** before reading the body. An unverified webhook is
+   an unauthenticated API for marking orders paid.
+2. **Never trust the amount.** The money is read from _our_ intent row; a
+   webhook that disagrees is recorded, rejected with a 409, and never applied.
+3. **Be idempotent.** Each provider's event id is claimed under a unique index,
+   so a replay is reported as a duplicate instead of paying twice.
+
+Gateways are **sandbox by default**: without credentials in the environment a
+provider is simply not offered, and nothing can reach a live gateway without
+live keys (`PAYMOB_LIVE` / `FAWRY_LIVE`). See `.env.example`.
+
 An order is a **snapshot**, not a live view: the customer's name, address and
 every line's price are copied at checkout. Renaming a product or changing its
 price afterwards must not re-write what somebody already agreed to pay. Two

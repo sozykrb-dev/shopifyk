@@ -681,6 +681,79 @@ export const orders = pgTable(
  * Like the order itself, each line is a snapshot: title, variant name, SKU and
  * unit price as they were when the order was placed.
  */
+/*
+ * Payment intents and webhook events.
+ *
+ * ADR 0007's two hard rules live in these two tables:
+ *
+ *   - **Money is never recomputed from a webhook.** The amount lives on our own
+ *     intent row; a webhook that disagrees is rejected, not believed.
+ *   - **Every webhook is idempotent.** `payment_events.provider_event_id` is
+ *     unique per provider, so a replay cannot apply the same payment twice.
+ */
+export const paymentIntents = pgTable(
+  'payment_intents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    /** The provider's reference, or ours for providers that have none. */
+    providerReference: text('provider_reference'),
+    status: text('status').notNull().default('pending'),
+    amountMinor: moneyMinorUnits('amount_minor').default(0),
+    /** Refunded so far, so a partial refund can be told from a full one. */
+    refundedMinor: moneyMinorUnits('refunded_minor').default(0),
+    currency: currencyCode('currency'),
+    /** Where to send the customer for an off-site checkout, if anywhere. */
+    redirectUrl: text('redirect_url'),
+    /** What to show instead: a Fawry reference, or bank details. */
+    instructions: text('instructions'),
+    lastError: text('last_error'),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('payment_intents_order_idx').on(table.storeId, table.orderId),
+    uniqueIndex('payment_intents_reference_key').on(table.storeId, table.providerReference),
+  ],
+);
+
+export const paymentEvents = pgTable(
+  'payment_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    /** The provider's own event id. Unique per provider: a replay is a no-op. */
+    providerEventId: text('provider_event_id').notNull(),
+    intentId: uuid('intent_id').references(() => paymentIntents.id, { onDelete: 'set null' }),
+    type: text('type'),
+    /** The status this event moved the intent to, if it moved it at all. */
+    status: text('status'),
+    /** The raw payload, kept for disputes and for replaying a bug. */
+    payload: jsonb('payload'),
+    processedAt: timestamp('processed_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex('payment_events_provider_event_key').on(
+      table.storeId,
+      table.provider,
+      table.providerEventId,
+    ),
+    index('payment_events_intent_idx').on(table.storeId, table.intentId),
+  ],
+);
+
 export const orderItems = pgTable(
   'order_items',
   {
@@ -771,6 +844,10 @@ export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type NewOrderItem = typeof orderItems.$inferInsert;
+export type PaymentIntent = typeof paymentIntents.$inferSelect;
+export type NewPaymentIntent = typeof paymentIntents.$inferInsert;
+export type PaymentEvent = typeof paymentEvents.$inferSelect;
+export type NewPaymentEvent = typeof paymentEvents.$inferInsert;
 export type NewCartItem = typeof cartItems.$inferInsert;
 
 export const schema = {

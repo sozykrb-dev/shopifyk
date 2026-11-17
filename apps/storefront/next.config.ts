@@ -25,7 +25,13 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Native/platform packages must stay outside the server bundle.
   serverExternalPackages: ['postgres', '@node-rs/argon2', 'pino', 'pino-pretty'],
-  transpilePackages: ['@velnorix/ui', '@velnorix/core', '@velnorix/db', '@velnorix/auth'],
+  transpilePackages: [
+    '@velnorix/ui',
+    '@velnorix/core',
+    '@velnorix/db',
+    '@velnorix/auth',
+    '@velnorix/payments',
+  ],
   poweredByHeader: false,
   allowedDevOrigins: [...previewOrigins, '*.e2b.app', '*.e2b.dev', 'localhost'],
   images: {

@@ -50,6 +50,13 @@
       "when": 1794892325729,
       "tag": "0006_one_active_cart_per_guest",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794894695305,
+      "tag": "0007_payment_intents",
+      "breakpoints": true
     }
   ]
 }

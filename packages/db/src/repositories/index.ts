@@ -5,5 +5,6 @@ export * from './products.js';
 export * from './catalog.js';
 export * from './cart.js';
 export * from './orders.js';
+export * from './payments.js';
 export * from './rbac.js';
 export * from './audit.js';

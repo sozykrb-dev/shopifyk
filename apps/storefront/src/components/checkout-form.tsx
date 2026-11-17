@@ -20,7 +20,23 @@ function SubmitButton({ total }: { total: string }) {
  * Collects a name, a phone number and an address -- and nothing about money.
  * Prices are read from the cart inside the action.
  */
-export function CheckoutForm({ defaultEmail, total }: { defaultEmail: string; total: string }) {
+export type PaymentMethodOption = {
+  provider: string;
+  labelAr: string;
+  labelEn: string;
+};
+
+export function CheckoutForm({
+  defaultEmail,
+  total,
+  methods,
+  locale,
+}: {
+  defaultEmail: string;
+  total: string;
+  methods: readonly PaymentMethodOption[];
+  locale: string;
+}) {
   const [state, formAction] = useActionState<CheckoutState, FormData>(placeOrderAction, {});
 
   return (
@@ -105,6 +121,27 @@ export function CheckoutForm({ defaultEmail, total }: { defaultEmail: string; to
           <Input id="region" name="region" autoComplete="address-level1" placeholder="الجيزة" />
         </div>
       </div>
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">طريقة الدفع</legend>
+        <div className="space-y-2">
+          {methods.map((method, index) => (
+            <label
+              key={method.provider}
+              className="flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+            >
+              <input
+                type="radio"
+                name="paymentMethod"
+                value={method.provider}
+                defaultChecked={index === 0}
+                className="size-4 accent-[hsl(var(--primary))]"
+              />
+              {locale === 'ar' ? method.labelAr : method.labelEn}
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="space-y-2">
         <Label htmlFor="notes">ملاحظات على الطلب (اختياري)</Label>

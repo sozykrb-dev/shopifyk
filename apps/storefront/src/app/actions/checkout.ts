@@ -1,9 +1,13 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { money } from '@velnorix/core';
+import { paymentRegistry } from '@velnorix/payments';
 import {
+  createPaymentIntent,
+  setPaymentIntentStatus,
   getCart,
   getOrCreateCustomerCart,
   getOrCreateGuestCart,
@@ -12,6 +16,14 @@ import {
 } from '@velnorix/db';
 import { CART_COOKIE, LAST_ORDER_COOKIE } from '@/lib/session.js';
 import { requireStorefront } from '@/lib/store-context.js';
+
+/** The origin a gateway should send the shopper back to. */
+async function originFor(): Promise<string> {
+  const headerList = await headers();
+  const host = headerList.get('host') ?? 'localhost';
+  const proto = headerList.get('x-forwarded-proto') ?? 'https';
+  return `${proto}://${host}`;
+}
 
 /**
  * Checkout.
@@ -67,6 +79,10 @@ export async function placeOrderAction(
   const { lines } = await withTenant(store.id, (db) => getCart(db, cart));
   if (lines.length === 0) return { error: 'السلة فارغة.' };
 
+  const paymentMethod = clean(formData.get('paymentMethod')) || 'cash_on_delivery';
+  const registry = paymentRegistry();
+  const gateway = registry.require(paymentMethod);
+
   let orderNumber: number;
   let orderId: string;
   try {
@@ -86,7 +102,7 @@ export async function placeOrderAction(
           region: clean(formData.get('region')) || null,
           countryCode: clean(formData.get('countryCode')) || 'EG',
           notes: clean(formData.get('notes')) || null,
-          paymentMethod: 'cash_on_delivery',
+          paymentMethod: gateway.provider,
           shippingMinor: 0,
         },
         lines.map((line) => ({
@@ -104,6 +120,42 @@ export async function placeOrderAction(
     );
     orderNumber = order.orderNumber;
     orderId = order.id;
+
+    const intent = await withTenant(store.id, (db) =>
+      createPaymentIntent(db, {
+        orderId: order.id,
+        provider: gateway.provider,
+        amount: money(order.totalMinor, order.currency),
+      }),
+    );
+
+    /*
+     * The gateway is asked for a payment *after* the order exists, so there is
+     * always a row of ours to hang the provider's reference on -- and so an
+     * order never silently has no payment behind it. The amount comes from the
+     * order, never from the browser (and never from the webhook later).
+     */
+    const payment = await gateway
+      .createPayment({
+        intentId: intent.id,
+        orderNumber: order.orderNumber,
+        amount: money(order.totalMinor, order.currency),
+        customer: {
+          email,
+          phone: clean(formData.get('phone')) || undefined,
+          name: shippingName,
+        },
+        returnUrl: `${originFor()}/checkout/confirm?order=${order.orderNumber}`,
+      })
+      .catch(() => null);
+
+    if (payment) {
+      await withTenant(store.id, (db) =>
+        setPaymentIntentStatus(db, intent.id, payment.status, {
+          providerReference: payment.providerReference,
+        }),
+      );
+    }
   } catch (error) {
     // Re-submitting hits the unique index on (store_id, cart_id): one cart can
     // only ever become one order.
